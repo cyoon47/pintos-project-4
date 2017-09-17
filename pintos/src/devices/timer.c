@@ -48,6 +48,7 @@ timer_init (void)
   outb (0x40, count >> 8);
 
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleeping);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -154,8 +155,8 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   struct list_elem *thread_elem;
-  struct thread* wake_thread;
-  
+  struct thread *wake_thread;
+
   ticks++;
   thread_tick ();
 

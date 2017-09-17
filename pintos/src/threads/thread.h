@@ -88,9 +88,14 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int donated_priority;               /* Priority after donation */
+    struct list locks_held;             /* List of locks held */
+    struct lock *waiting_lock            /* Lock the thread is waiting for */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    int64_t wake_up_time;               /* Time to wake up */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

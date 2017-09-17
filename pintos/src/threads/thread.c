@@ -235,7 +235,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, thread_compare_donated_priority, NULL); // Insert thread into ready_list, sorted by donated_priority
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -354,6 +354,26 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
+
+/* Function to compare wake_up_time of threads for use in insert_list_ordered */
+bool
+thread_compare_wake_up(struct list_elem* a, struct list_elem* b, void *aux)
+{
+  struct thread* thread_a = list_entry(a, struct thread, elem);
+  struct thread* thread_b = list_entry(b, struct thread, elem);
+
+  return thread_a->wake_up_time < thread_b->wake_up_time;
+}
+
+/* Function to compare priority value of threads for use in insert_list_ordered */
+bool
+thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *aux)
+{
+  struct thread* thread_a = list_entry(a, struct thread, elem);
+  struct thread* thread_b = list_entry(b, struct thread, elem);
+
+  return thread_a->donated_priority > thread_b->donated_priority;
+}
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -439,6 +459,9 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->donated_priority = priority;
+  list_init(&t->locks_held);
+  t->waiting_lock = NULL;
   t->magic = THREAD_MAGIC;
 }
 

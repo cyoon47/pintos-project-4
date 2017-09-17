@@ -111,8 +111,7 @@ timer_sleep (int64_t ticks)
   prev_intr = intr_disable();
 
   struct thread* curr_thread = thread_current();
-    
-
+  
   curr_thread->wake_up_time = ticks + timer_ticks(); // Calculate wake up time for thread
 
   list_insert_ordered(&sleeping, &curr_thread->elem, thread_compare_wake_up, NULL); // Insert thread into sleeping list, sorted by wake_up_time
@@ -156,6 +155,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   struct list_elem *thread_elem;
   struct thread *wake_thread;
+  bool has_woken_thread = false;
 
   ticks++;
   thread_tick ();
@@ -170,7 +170,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
     }
     list_remove(thread_elem);
     thread_unblock(wake_thread);
+    has_woken_thread = true;
   }
+  if(has_woken_thread)
+    intr_yield_on_return(); // Yield to make sure higher priority thread runs first.
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

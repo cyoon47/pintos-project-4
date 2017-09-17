@@ -9,6 +9,8 @@
 #include "threads/thread.h"
 #include "devices/timer.h"
 
+#include <string.h>
+
 static thread_func alarm_priority_thread;
 static int64_t wake_time;
 static struct semaphore wait_sema;
@@ -50,7 +52,7 @@ alarm_priority_thread (void *aux UNUSED)
      we can call timer_sleep() without worrying about races
      between checking the time and a timer interrupt. */
   timer_sleep (wake_time - timer_ticks ());
-
+  
   /* Print a message on wake-up. */
   msg ("Thread %s woke up.", thread_name ());
 

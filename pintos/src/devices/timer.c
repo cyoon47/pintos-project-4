@@ -172,7 +172,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     thread_unblock(wake_thread);
     has_woken_thread = true;
   }
-  if(has_woken_thread)
+  if(has_woken_thread && !thread_has_max_priority())
     intr_yield_on_return(); // Yield to make sure higher priority thread runs first.
 }
 

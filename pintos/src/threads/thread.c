@@ -374,6 +374,15 @@ thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *
 
   return thread_a->donated_priority > thread_b->donated_priority;
 }
+
+/* Function to check if current thread has maximum priority */
+bool
+thread_has_max_priority(void){
+  struct thread* curr = thread_current();
+  struct thread* front = list_entry(list_front(&ready_list), struct thread, elem);
+
+  return curr->donated_priority == front->donated_priority;
+}
 
 /* Idle thread.  Executes when no other thread is ready to run.
 

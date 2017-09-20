@@ -201,8 +201,8 @@ lock_acquire (struct lock *lock)
   ASSERT (!lock_held_by_current_thread (lock));
 
   struct thread *t = thread_current ();
-  //enum intr_level prev_intr;
-  //prev_intr = intr_disable();
+  enum intr_level prev_intr;
+  prev_intr = intr_disable();
   if (lock->holder != NULL)   //if waiter list is empty
   {
     t->waiting_lock = lock;
@@ -224,7 +224,7 @@ lock_acquire (struct lock *lock)
   t->waiting_lock = NULL;
   list_push_back (&(t->locks_held), &lock->elem);
   lock->holder = thread_current ();
-  //intr_set_level(prev_intr);
+  intr_set_level(prev_intr);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

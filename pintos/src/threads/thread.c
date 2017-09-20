@@ -324,11 +324,12 @@ thread_set_priority (int new_priority)
   thread_current ()->priority = new_priority;
 }
 
-/* Returns the current thread's priority. */
+/* Returns the current thread's priority.
+   In the presence of priority donation, returns the higher (donated) priority.*/
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->donated_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */

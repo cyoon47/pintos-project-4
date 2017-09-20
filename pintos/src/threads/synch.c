@@ -200,8 +200,31 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  struct thread *t = thread_current ();
+  //enum intr_level prev_intr;
+  //prev_intr = intr_disable();
+  if (lock->holder != NULL)   //if waiter list is empty
+  {
+    t->waiting_lock = lock;
+    struct lock *l = lock;
+    int depth = 0;
+
+    while (depth < 8 && t->donated_priority > l->priority)
+    {
+      l->priority = t->donated_priority;
+      l->holder->donated_priority = t->donated_priority;
+      l = l->holder->waiting_lock;
+      depth++;
+      if (l == NULL)
+        break;
+    }
+  }
+
   sema_down (&lock->semaphore);
+  t->waiting_lock = NULL;
+  list_push_back (&(t->locks_held), &lock->elem);
   lock->holder = thread_current ();
+  //intr_set_level(prev_intr);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false

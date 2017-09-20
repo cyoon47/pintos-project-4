@@ -407,6 +407,8 @@ thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *
 bool
 thread_has_max_priority(void){
   struct thread* curr = thread_current();
+  if(list_empty(&ready_list))
+    return true;
   struct thread* front = list_entry(list_front(&ready_list), struct thread, elem);
 
   return curr->donated_priority == front->donated_priority;

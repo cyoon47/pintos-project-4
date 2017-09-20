@@ -239,7 +239,7 @@ lock_release (struct lock *lock)
   enum intr_level prev_intr;
   prev_intr = intr_disable();
 
-  list_remove(lock->elem); // remove lock from thread's locks_held
+  list_remove(&lock->elem); // remove lock from thread's locks_held
 
   thread_update_donated_priority(lock->holder); // update holder's priority
 

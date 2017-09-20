@@ -138,6 +138,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void thread_update_donated_priority(struct thread*);
 bool thread_compare_wake_up (struct list_elem*, struct list_elem*, void *);
 bool thread_compare_donated_priority(struct list_elem*, struct list_elem*, void *);
 bool thread_has_max_priority(void);

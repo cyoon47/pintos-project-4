@@ -170,6 +170,7 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
+  enum intr_level prev_intr;
 
   ASSERT (function != NULL);
 
@@ -199,6 +200,12 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  prev_intr = intr_disable();
+
+  if(!thread_has_max_priority()) // if newly created thread has higher priority
+    thread_yield();
+
+  intr_set_level(prev_intr);
   return tid;
 }
 
@@ -353,6 +360,27 @@ thread_get_recent_cpu (void)
 {
   /* Not yet implemented. */
   return 0;
+}
+
+/* Function to update thread's donated priority to maximum among the locks. */
+void
+thread_update_donated_priority(struct thread* t)
+{
+  enum intr_level prev_intr;
+  prev_intr = intr_disable();
+  
+  int max_lock_priority;
+  int new_priority = t->priority;
+  
+  if(!list_empty(&t->locks_held))
+  {
+    max_lock_priority = list_entry(list_front(&t->locks_held), struct lock, elem)->priority; // get the highest priority among the locks
+    if(max_lock_priority > new_priority)
+      new_priority = max_lock_priority;
+  }
+
+  t->donated_priority = new_priority;
+  intr_set_level(prev_intr);
 }
 
 /* Function to compare wake_up_time of threads for use in insert_list_ordered */

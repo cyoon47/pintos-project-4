@@ -375,6 +375,7 @@ thread_update_donated_priority(struct thread* t)
   
   if(!list_empty(&t->locks_held))
   {
+    list_sort(&t->locks_held, lock_compare_priority, NULL); // reflect changes in lock priority
     max_lock_priority = list_entry(list_front(&t->locks_held), struct lock, elem)->priority; // get the highest priority among the locks
     if(max_lock_priority > new_priority)
       new_priority = max_lock_priority;
@@ -406,14 +407,23 @@ thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *
 
 /* Function to check if current thread has maximum priority */
 bool
-thread_has_max_priority(void){
+thread_has_max_priority(void)
+{
   struct thread* curr = thread_current();
   if(list_empty(&ready_list))
     return true;
   struct thread* front = list_entry(list_front(&ready_list), struct thread, elem);
 
-  return curr->donated_priority == front->donated_priority;
+  return curr->donated_priority >= front->donated_priority;
 }
+
+/* Function to update ready_list to reflect changes in priority */
+void
+update_ready_list(void)
+{
+  list_sort(&ready_list, thread_compare_donated_priority, NULL);
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 

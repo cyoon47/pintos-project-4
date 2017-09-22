@@ -317,11 +317,33 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to NEW_PRIORITY.
+   If the current thread no longer has the highest priority, yields.*/
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level;
+  
+  ASSERT (!intr_context ());
+
+  old_level = intr_disable ();
+  
+  struct thread *t = thread_current();
+  if (new_priority > t->donated_priority)
+  {
+    t->donated_priority = new_priority;
+  }
+  t->priority = new_priority;
+  if (t->waiting_lock != NULL && t->waiting_lock->priority < new_priority)
+  {
+    t->waiting_lock->priority = new_priority;
+  }
+  if (!thread_has_max_priority())
+  {
+    thread_yield();
+  }
+  update_ready_list();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority.

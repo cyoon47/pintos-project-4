@@ -294,7 +294,18 @@ thread_exit (void)
   /* Just set our status to dying and schedule another process.
      We will be destroyed during the call to schedule_tail(). */
   intr_disable ();
-  thread_current ()->status = THREAD_DYING;
+  struct thread* t = thread_current();
+  t->status = THREAD_DYING;
+
+  if(!list_empty(&t->locks_held))
+  {
+    struct list_elem *e;
+    for(e = list_front(&t->locks_held); e != list_end(&t->locks_held); e = list_next(e))
+    {
+      struct lock *l = list_entry(e, struct lock, elem);
+      lock_release(l);
+    }  
+  }
   schedule ();
   NOT_REACHED ();
 }
@@ -327,22 +338,30 @@ thread_set_priority (int new_priority)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  
+
   struct thread *t = thread_current();
-  if (new_priority > t->donated_priority)
-  {
-    t->donated_priority = new_priority;
-  }
+
   t->priority = new_priority;
-  if (t->waiting_lock != NULL && t->waiting_lock->priority < new_priority)
+
+  if(!list_empty(&t->locks_held))
   {
-    t->waiting_lock->priority = new_priority;
+    struct list_elem *e;
+    for(e = list_front(&t->locks_held); e != list_end(&t->locks_held); e = list_next(e))
+    {
+      struct lock *l = list_entry(e, struct lock, elem);
+      lock_update_priority(l);
+    }  
   }
+
+  thread_update_donated_priority(t);
+
+  update_ready_list();
+  
   if (!thread_has_max_priority())
   {
     thread_yield();
   }
-  update_ready_list();
+
   intr_set_level (old_level);
 }
 

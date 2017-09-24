@@ -337,6 +337,9 @@ thread_set_priority (int new_priority)
   
   ASSERT (!intr_context ());
 
+  if(new_priority < PRI_MIN || new_priority > PRI_MAX)
+    return;
+
   old_level = intr_disable ();
 
   struct thread *t = thread_current();

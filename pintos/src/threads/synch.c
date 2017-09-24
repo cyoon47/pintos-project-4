@@ -303,8 +303,13 @@ void
 lock_update_priority(struct lock* l)
 {
   struct semaphore* sema = &l->semaphore;
-  list_sort(&sema->waiters, thread_compare_donated_priority, NULL);
-  l->priority = list_entry(list_front(&sema->waiters), struct thread, elem)->donated_priority;
+  l->priority = 0;
+  if(!list_empty(&sema->waiters))
+  {
+    list_sort(&sema->waiters, thread_compare_donated_priority, NULL);
+    l->priority = list_entry(list_front(&sema->waiters), struct thread, elem)->donated_priority;   
+  }
+  
 }
 
 /* One semaphore in a list. */

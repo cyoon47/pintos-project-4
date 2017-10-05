@@ -183,6 +183,12 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  struct child *ch = malloc(sizeof(struct child));
+  ch->tid = tid;
+  ch->exit_status = -1;
+  sema_init(&ch->wait_sema, 0);
+  list_push_back(&thread_current()->child_list, &ch->elem);
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -283,12 +289,12 @@ thread_tid (void)
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
-thread_exit (void) 
+thread_exit (int status) 
 {
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  process_exit ();
+  process_exit (status);
 #endif
 
   /* Just set our status to dying and schedule another process.
@@ -515,7 +521,7 @@ kernel_thread (thread_func *function, void *aux)
                     
   intr_enable ();       /* The scheduler runs with interrupts off. */
   function (aux);       /* Execute the thread function. */
-  thread_exit ();       /* If function() returns, kill the thread. */
+  thread_exit (0);       /* If function() returns, kill the thread. */
 }
 
 /* Returns the running thread. */
@@ -557,6 +563,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->locks_held);
   t->waiting_lock = NULL;
   t->magic = THREAD_MAGIC;
+
+  t->parent = running_thread();
+  list_init(&t->child_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -123,7 +123,7 @@ main (void)
   /* Finish up. */
   if (power_off_when_done)
     power_off ();
-  thread_exit ();
+  thread_exit (0);
 }
 
 /* Clear BSS and obtain RAM size from loader. */

@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -90,12 +91,18 @@ struct thread
     int priority;                       /* Priority. */
     int donated_priority;               /* Priority after donation */
     struct list locks_held;             /* List of locks held */
-    struct lock *waiting_lock;            /* Lock the thread is waiting for */
+    struct lock *waiting_lock;          /* Lock the thread is waiting for */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
     int64_t wake_up_time;               /* Time to wake up */
+
+    /* For communication between parent and child */
+    struct thread *parent;              /* parent thread */
+    struct list child_list;             /* list of child threads */
+    struct child *waiting_child;
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -105,6 +112,16 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+
+/* struct to hold information necessary for parent about the child process */
+struct child
+{
+  tid_t tid;
+  int exit_status;
+  struct semaphore wait_sema;
+  struct list_elem elem;
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -127,7 +144,7 @@ struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
-void thread_exit (void) NO_RETURN;
+void thread_exit (int) NO_RETURN;
 void thread_yield (void);
 
 int thread_get_priority (void);

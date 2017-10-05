@@ -49,7 +49,9 @@ process_execute (const char *file_name)
   free(f_name); // free no longer required f_name
 
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  {
+    palloc_free_page (fn_copy);
+  }
   return tid;
 }
 
@@ -72,7 +74,7 @@ start_process (void *f_name)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
-    thread_exit ();
+    thread_exit (-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -94,21 +96,68 @@ start_process (void *f_name)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while(true)
-  {
+  struct list_elem *e;
+  struct child *ch = NULL;
+  struct thread *curr = thread_current();
 
-  }
-  return -1;
+  /* search for child with child_tid */
+  for(e = list_begin(&curr->child_list); e != list_end(&curr->child_list); e = list_next(e))
+    {
+      struct child *temp_ch = list_entry(e, struct child, elem);
+      if(temp_ch->tid == child_tid)
+      {
+        ch = temp_ch;
+        break;
+      }
+    }
+
+  if(ch == NULL) // return -1 if no such child was found
+    return -1;
+
+  curr->waiting_child = ch;
+  sema_down(&ch->wait_sema); // wait for the child to exit and call sema_up
+  
+  int exit_status = ch->exit_status;
+  list_remove(e);
+  free(ch);
+
+  return exit_status;
 }
 
 /* Free the current process's resources. */
 void
-process_exit (void)
+process_exit (int status)
 {
   struct thread *curr = thread_current ();
   uint32_t *pd;
+
+  printf("%s: exit(%d)\n", curr->name, status); // process exit message
+
+  struct list_elem *e;
+  struct child *ch;
+
+  for(e = list_begin(&curr->parent->child_list); e != list_end (&curr->parent->child_list); e = list_next(e))
+  {
+    struct child *temp_ch = list_entry(e, struct child, elem);
+    if(temp_ch->tid == curr->tid)
+    {
+      ch = temp_ch;
+      break;
+    }
+  }
+
+  ch->exit_status = status;
+  if(curr->parent->waiting_child == ch)
+  {
+    sema_up(&ch->wait_sema);
+  }
+  else // if parent is not waiting on the thread, remove child and free struct child
+  {
+    list_remove(e);
+    free(ch);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -471,14 +520,12 @@ setup_stack (void **esp, int argc, char **argv)
         *esp = PHYS_BASE;
 
         int i;
-        int hex_bytes = 0; // for debugging purposes
         char *arg_ptr[argc]; // array of pointers to arguments in stack
 
         // push arguments into stack
         for(i = argc-1; i >= 0; i--)
         {
           *esp = (char*) *esp - (strlen(argv[i]) + 1); 
-          hex_bytes += strlen(argv[i]) + 1;
           arg_ptr[i] = (char *) *esp; 
           memcpy(*esp, argv[i], strlen(argv[i]) + 1);
         }
@@ -487,7 +534,6 @@ setup_stack (void **esp, int argc, char **argv)
         while((int) *esp % 4 != 0) 
         {
           *esp = (char *) *esp - sizeof(char);
-          hex_bytes++;
           char buf = 0;
           memcpy(*esp, &buf, sizeof(char));
         }
@@ -496,22 +542,18 @@ setup_stack (void **esp, int argc, char **argv)
         *esp = (char *) *esp - sizeof(char *);
         char *sentinel = 0;
         memcpy(*esp, &sentinel, sizeof(char *));
-        hex_bytes += sizeof(char *);
 
         // push address of arguments into stack
         for(i = argc - 1; i >= 0; i--)
         {
           *esp = (char *) *esp - sizeof(char *);
           memcpy(*esp, &arg_ptr[i], sizeof(char *));
-          hex_bytes += sizeof(char *);
         }
 
         // push address to argv
         char **argv_ptr = *esp;
         *esp = (char *) *esp - sizeof(char **);
         memcpy(*esp, &argv_ptr, sizeof(char **));
-
-        hex_bytes += sizeof(char **) + sizeof(int) + sizeof(void *);
 
         // push argc
         *esp = (char *) *esp - sizeof(int);
@@ -522,9 +564,7 @@ setup_stack (void **esp, int argc, char **argv)
         *esp = (char *) *esp - sizeof(void *);
         memcpy(*esp, &ret, sizeof(void *));
 
-        printf("%p\n", PHYS_BASE);
-
-        hex_dump(*esp, *esp, hex_bytes, true);
+        //hex_dump(*esp, *esp, PHYS_BASE-(*esp), true);
 
       }
       else

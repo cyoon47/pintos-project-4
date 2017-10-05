@@ -45,7 +45,7 @@ bool check_pointer(void *ptr)
 	return true;
 }
 
-/* checks one argument for the given pointer */
+/* checks args number of arguments for the given pointer */
 bool check_args(void *ptr, int args)
 {
   int i;
@@ -74,46 +74,92 @@ syscall_handler (struct intr_frame *f)
 	}
 
   	int syscall_no = *(int *)esp;
-  	int i;
+  	
+    switch(syscall_no)
+    {
+      case SYS_HALT:
+        power_off();
+        break;
+      
+      case SYS_EXIT:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int status;
+        status = *(int *) (esp + 4);
+        thread_exit(status);
+        break;
 
-  	if(syscall_no == SYS_WRITE)
-  	{
-  		if(!check_args(esp + 4, 3))
-      {
-        thread_exit(-1);
-        return;
+      case SYS_EXEC:
+
+        break;
+
+      case SYS_WAIT:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int pid = *(int *) (esp + 4);
+        f->eax = process_wait(pid);
+        break;
+
+      case SYS_CREATE:
+
+        break;
+
+      case SYS_REMOVE:
+
+        break;
+
+      case SYS_OPEN:
+
+        break;
+
+      case SYS_FILESIZE:
+
+        break;
+
+      case SYS_READ:
+
+        break;
+
+      case SYS_WRITE:
+        if(!check_args(esp + 4, 3))
+        {
+          thread_exit(-1);
+          return;
+        }
+
+        int fd = *(int *)(esp + 4);
+        char *buffer = *(char **)(esp + 8);
+        unsigned size = *(unsigned *) (esp + 12);
+
+        if(!check_pointer(buffer) || !check_pointer(buffer + size)) //check buffer
+        {
+          thread_exit(-1);
+          return;
+        }
+
+        if(fd == 1) // writing to stdout
+        {
+          putbuf(buffer, size);
+          f->eax = size;
+        }
+        break;
+
+      case SYS_SEEK:
+
+        break;
+
+      case SYS_TELL:
+
+        break;
+
+      case SYS_CLOSE:
+
+        break;
       }
-
-  		int fd = *(int *)(esp + 4);
-  		char *buffer = *(char **)(esp + 8);
-  		unsigned size = *(unsigned *) (esp + 12);
-
-  		if(!check_pointer(buffer) || !check_pointer(buffer + size)) //check buffer
-  		{
-  			thread_exit(-1);
-  			return;
-  		}
-
-  		if(fd == 1) // writing to stdout
-  		{
-  			putbuf(buffer, size);
-  			f->eax = size;
-  		}
-  	}
-  	else if(syscall_no == SYS_EXIT)
-  	{
-  		if(!check_args(esp + 4, 1))
-      {
-        thread_exit(-1);
-        return;
-      }
-      int status;
-  		status = *(int *) (esp + 4);
-  		thread_exit(status);
-  	}
-
-  	/*
-  printf ("system call!\n");
-  thread_exit ();
-  */
-}
+    }

@@ -103,6 +103,8 @@ struct thread
     struct list child_list;             /* list of child threads */
     struct child *waiting_child;
 
+    /* For managing files opened by thread */
+    struct list file_list;              /* list of open files */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -120,6 +122,14 @@ struct child
   tid_t tid;
   int exit_status;
   struct semaphore wait_sema;
+  struct list_elem elem;
+};
+
+/* struct to manage file descriptor and representing files */
+struct file_map
+{
+  int fd;
+  struct file *file;
   struct list_elem elem;
 };
 

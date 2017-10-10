@@ -566,6 +566,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   t->parent = running_thread();
   list_init(&t->child_list);
+  list_init(&t->file_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

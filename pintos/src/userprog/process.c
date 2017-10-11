@@ -51,7 +51,28 @@ process_execute (const char *file_name)
   if (tid == TID_ERROR)
   {
     palloc_free_page (fn_copy);
+    return -1;
   }
+
+  struct child *ch = NULL;
+  struct thread *curr = thread_current();
+  struct list_elem *e;
+  for(e = list_begin(&curr->child_list); e != list_end(&curr->child_list); e = list_next(e))
+  {
+    struct child *temp_ch = list_entry(e, struct child, elem);
+    if(temp_ch->tid == tid)
+    {
+      ch = temp_ch;
+      break;
+    }
+  }
+  sema_down(&ch->wait_sema); // wait for child to finish loading
+  
+  if(!ch->load_success)
+  {
+    return -1;
+  }
+  
   return tid;
 }
 
@@ -73,8 +94,33 @@ start_process (void *f_name)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
+
+  struct thread *parent = thread_current()->parent;
+  tid_t tid = thread_current()->tid;
+  struct child *ch = NULL;
+  struct list_elem *e;
+
+  for(e = list_begin(&parent->child_list); e != list_end(&parent->child_list); e = list_next(e))
+  {
+    struct child *temp_ch = list_entry(e, struct child, elem);
+    if(temp_ch->tid == tid)
+    {
+      ch = temp_ch;
+      break;
+    }
+  }
+
   if (!success) 
+  {
+    ch->load_success = false;
+    sema_up(&ch->wait_sema);
     thread_exit (-1);
+  }
+  else
+  {
+    ch->load_success = true;
+    sema_up(&ch->wait_sema);
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -116,8 +162,8 @@ process_wait (tid_t child_tid)
   if(ch == NULL) // return -1 if no such child was found
     return -1;
 
-  curr->waiting_child = ch;
-  sema_down(&ch->wait_sema); // wait for the child to exit and call sema_up
+  if(!ch->exit)                 // if the child has not exited yet
+    sema_down(&ch->wait_sema);  // wait for the child to exit and call sema_up at exit
   
   int exit_status = ch->exit_status;
   list_remove(e);
@@ -149,15 +195,9 @@ process_exit (int status)
   }
 
   ch->exit_status = status;
-  if(curr->parent->waiting_child == ch)
-  {
-    sema_up(&ch->wait_sema);
-  }
-  else // if parent is not waiting on the thread, remove child and free struct child
-  {
-    list_remove(e);
-    free(ch);
-  }
+  ch->exit = true;
+  
+  sema_up(&ch->wait_sema); // wake up parent if waiting
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

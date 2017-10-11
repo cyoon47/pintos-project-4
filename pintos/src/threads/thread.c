@@ -187,6 +187,8 @@ thread_create (const char *name, int priority,
   ch->tid = tid;
   ch->exit_status = -1;
   sema_init(&ch->wait_sema, 0);
+  ch->load_success = false;
+  ch->exit = false;
   list_push_back(&thread_current()->child_list, &ch->elem);
 
   /* Stack frame for kernel_thread(). */

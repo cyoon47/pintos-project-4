@@ -101,7 +101,6 @@ struct thread
     /* For communication between parent and child */
     struct thread *parent;              /* parent thread */
     struct list child_list;             /* list of child threads */
-    struct child *waiting_child;
 
     /* For managing files opened by thread */
     struct list file_list;              /* list of open files */
@@ -121,6 +120,8 @@ struct child
 {
   tid_t tid;
   int exit_status;
+  bool load_success;
+  bool exit;
   struct semaphore wait_sema;
   struct list_elem elem;
 };

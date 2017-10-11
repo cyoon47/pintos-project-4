@@ -57,6 +57,20 @@ bool check_args(void *ptr, int args)
   return true;
 }
 
+/* checks if the string is within valid pointer range */
+bool check_string(char *ptr)
+{
+  int c = get_user(ptr);
+  while(c != -1)
+  {
+    if(c == '\0')
+      return true;
+    ptr++;
+    c = get_user(ptr);
+  }
+  return false;
+}
+
 void
 syscall_init (void) 
 {
@@ -93,6 +107,13 @@ syscall_handler (struct intr_frame *f)
         break;
 
       case SYS_EXEC:
+        if(!check_args(esp + 4, 1) || !check_string( *(char **)(esp + 4) ))
+        {
+          thread_exit(-1);
+          return;
+        }
+        char *cmd_line = *(char **)(esp + 4);
+        f->eax = process_execute(cmd_line);
 
         break;
 

@@ -196,6 +196,9 @@ process_exit (int status)
 
   ch->exit_status = status;
   ch->exit = true;
+  acquire_file_lock();
+  file_close(thread_current()->own_file); // close its file to allow write
+  release_file_lock();
   
   sema_up(&ch->wait_sema); // wake up parent if waiting
 
@@ -339,6 +342,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   process_activate ();
 
+  // acquire access to filesys
+  acquire_file_lock();
+
   /* Open executable file. */
   file = filesys_open (argv[0]);
   if (file == NULL) 
@@ -427,11 +433,17 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
+  thread_current()->own_file = file;
+  file_deny_write(file);
 
  done:
   /* We arrive here whether the load is successful or not. */
   free(f_copy);
-  file_close (file);
+
+  if(!success)
+    file_close (file);
+  
+  release_file_lock();
   return success;
 }
 

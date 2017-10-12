@@ -136,14 +136,87 @@ syscall_handler (struct intr_frame *f)
         break;
 
       case SYS_OPEN:
+        if(!check_args(esp + 4, 1) || !check_string( *(char **)(esp + 4)))
+        {
+          thread_exit(-1);
+          return;
+        }
+        char *file_name = *(char **) (esp + 4);
+        acquire_file_lock();
+        struct file *file_ptr = filesys_open(file_name);
+        release_file_lock();
+
+        if(file_ptr == NULL)
+          f->eax = -1;
+        else
+        {
+          struct file_map *fmap = malloc(sizeof(struct file_map));
+          fmap->fd = thread_current()->next_fd++;
+          fmap->file = file_ptr;
+          list_push_back(&thread_current()->file_list, &fmap->elem);
+          f->eax = fmap->fd;
+        }
 
         break;
 
       case SYS_FILESIZE:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int fs_fd = *(int *)(esp + 4);
+        struct file *fs_file = get_file(&thread_current()->file_list, fs_fd);
+        if(fs_file == NULL)
+        {
+          return -1;
+        }
+        acquire_file_lock();
+        f->eax = file_length(fs_file);
+        release_file_lock();
 
         break;
 
       case SYS_READ:
+        if(!check_args(esp + 4, 3))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int read_fd = *(int *)(esp + 4);
+        char *read_buffer = *(char **)(esp + 8);
+        unsigned read_size = *(unsigned *) (esp + 12);
+
+        if(!check_pointer(read_buffer) || !check_pointer(read_buffer + read_size)) //check buffer
+        {
+          thread_exit(-1);
+          return;
+        }
+
+        if(read_fd == 0) // read from keyboard
+        {
+          int i;
+          for(i = 0; i < read_size; i++)
+          {
+            read_buffer[i] = input_getc();
+          }
+          f->eax = read_size;
+        }
+        else
+        {
+          struct file *read_file = get_file(&thread_current()->file_list, read_fd);
+          if(read_file == NULL)
+          {
+            f->eax = -1; 
+            return;
+          }
+          else
+          {
+            acquire_file_lock();
+            f->eax = file_read(read_file, read_buffer, read_size);
+            release_file_lock();
+          } 
+        }
 
         break;
 
@@ -154,29 +227,82 @@ syscall_handler (struct intr_frame *f)
           return;
         }
 
-        int fd = *(int *)(esp + 4);
-        char *buffer = *(char **)(esp + 8);
-        unsigned size = *(unsigned *) (esp + 12);
+        int write_fd = *(int *)(esp + 4);
+        char *write_buffer = *(char **)(esp + 8);
+        unsigned write_size = *(unsigned *) (esp + 12);
 
-        if(!check_pointer(buffer) || !check_pointer(buffer + size)) //check buffer
+        if(!check_pointer(write_buffer) || !check_pointer(write_buffer + write_size)) //check buffer
         {
           thread_exit(-1);
           return;
         }
 
-        if(fd == 1) // writing to stdout
+        if(write_fd == 1) // writing to stdout
         {
-          putbuf(buffer, size);
-          f->eax = size;
+          putbuf(write_buffer, write_size);
+          f->eax = write_size;
+        }
+        else
+        {
+          struct file *write_file = get_file(&thread_current()->file_list, write_fd);
+          if(write_file == NULL)
+          {
+            f->eax = -1; 
+            return;
+          }
+          else
+          {
+            acquire_file_lock();
+            f->eax = file_write(write_file, write_buffer, write_size);
+            release_file_lock();
+          } 
         }
         break;
 
       case SYS_SEEK:
+        if(!check_args(esp + 4, 2))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int seek_fd = *(int *)(esp + 4);
+        unsigned pos = *(unsigned *)(esp + 8);
+
+        struct file *seek_file = get_file(&thread_current()->file_list, seek_fd);
+        if(seek_file == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+        else
+        {
+          acquire_file_lock();
+          f->eax = file_seek(seek_file, pos);
+          release_file_lock();
+        }
 
         break;
 
       case SYS_TELL:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int tell_fd = *(int *)(esp + 4);
 
+        struct file *tell_file = get_file(&thread_current()->file_list, seek_fd);
+        if(tell_file == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+        else
+        {
+          acquire_file_lock();
+          f->eax = file_tell(seek_file, pos);
+          release_file_lock();
+        }
         break;
 
       case SYS_CLOSE:

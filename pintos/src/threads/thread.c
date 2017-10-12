@@ -36,6 +36,7 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+struct lock file_lock;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -90,6 +91,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  lock_init (&file_lock);
   list_init (&ready_list);
 
   /* Set up a thread structure for the running thread. */
@@ -476,6 +478,35 @@ update_ready_list(void)
   list_sort(&ready_list, thread_compare_donated_priority, NULL);
 }
 
+/* Functions to acquire/release file_lock */
+void
+acquire_file_lock(void)
+{
+  lock_acquire(&file_lock);
+}
+
+void
+release_file_lock(void)
+{
+  lock_release(&file_lock);
+}
+
+/* get file from fd */
+struct file *get_file(struct list *file_list, int fd)
+{
+  struct list_elem *e;
+  for(e = list_begin(file_list); e != list_end(file_list); e = list_next(e))
+  {
+    struct file_map *temp_fmap = list_entry(e, struct file_map, elem);
+    if(temp_fmap->fd == fd)
+    {
+      return temp_fmap->file;
+    }
+  }
+
+  return NULL;
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -569,6 +600,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent = running_thread();
   list_init(&t->child_list);
   list_init(&t->file_list);
+  t->next_fd = 2;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -104,6 +104,8 @@ struct thread
 
     /* For managing files opened by thread */
     struct list file_list;              /* list of open files */
+    struct file *own_file;              /* its own file to be closed on exit */
+    int next_fd;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -171,5 +173,8 @@ bool thread_compare_wake_up (struct list_elem*, struct list_elem*, void *);
 bool thread_compare_donated_priority(struct list_elem*, struct list_elem*, void *);
 bool thread_has_max_priority(void);
 void update_ready_list(void);
+void acquire_file_lock(void);
+void release_file_lock(void);
+struct file *get_file(struct list*, int);
 
 #endif /* threads/thread.h */

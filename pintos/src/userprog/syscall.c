@@ -128,10 +128,41 @@ syscall_handler (struct intr_frame *f)
         break;
 
       case SYS_CREATE:
+        if(!check_args(esp + 4, 2) || !check_string( *(char **)(esp + 4)))
+        {
+          thread_exit(-1);
+          return;
+        }
+        char *file_create = *(char **) (esp + 4);
+        unsigned initial_size = *(unsigned *) (esp + 8);
 
+        acquire_file_lock();
+        struct file *file_ptr_create = filesys_create(file_create, initial_size);
+        release_file_lock();
+
+        if(file_ptr_create == NULL)
+        {
+          f->eax = false;
+        }
+        else
+        {
+          f->eax = true;
+        }
         break;
 
       case SYS_REMOVE:
+        if(!check_args(esp + 4, 1) || !check_string( *(char **)(esp + 4)))
+        {
+          thread_exit(-1);
+          return;
+        }
+        char *file_remove = *(char **) (esp + 4);
+
+        acquire_file_lock();
+        bool removed = filesys_remove(file_remove);
+        release_file_lock();
+
+        f->eax = removed;
 
         break;
 
@@ -306,7 +337,28 @@ syscall_handler (struct intr_frame *f)
         break;
 
       case SYS_CLOSE:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int close_fd = *(int *)(esp + 4);
+
+        struct file_map *close_file_map = get_file_map(&thread_current()->file_list, close_fd);
+        if(close_file_map == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+        else
+        {
+          acquire_file_lock();
+          f->eax = file_close(close_file_map->file, pos);
+          release_file_lock();
+          list_remove(&close_file_map->elem);
+          free(close_file_map);
+        }
 
         break;
-      }
     }
+}

@@ -491,8 +491,8 @@ release_file_lock(void)
   lock_release(&file_lock);
 }
 
-/* get file from fd */
-struct file *get_file(struct list *file_list, int fd)
+/* get corresponding file_map from fd */
+struct file_map *get_file_map(struct list *file_list, int fd)
 {
   struct list_elem *e;
   for(e = list_begin(file_list); e != list_end(file_list); e = list_next(e))
@@ -500,12 +500,26 @@ struct file *get_file(struct list *file_list, int fd)
     struct file_map *temp_fmap = list_entry(e, struct file_map, elem);
     if(temp_fmap->fd == fd)
     {
-      return temp_fmap->file;
+      return temp_fmap;
     }
   }
 
   return NULL;
 }
+/* get file from fd */
+struct file *get_file(struct list *file_list, int fd)
+{
+  struct file_map *temp_fmap = get_file_map(file_list, fd);
+
+  if(temp_fmap == NULL) {
+    return NULL;
+  }
+  else
+  {
+    return temp_fmap->file;
+  }
+}
+
 
 
 /* Idle thread.  Executes when no other thread is ready to run.

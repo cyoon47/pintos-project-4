@@ -167,7 +167,6 @@ process_wait (tid_t child_tid)
   
   int exit_status = ch->exit_status;
   list_remove(e);
-  free(ch);
 
   return exit_status;
 }
@@ -182,7 +181,7 @@ process_exit (int status)
   printf("%s: exit(%d)\n", curr->name, status); // process exit message
 
   struct list_elem *e;
-  struct child *ch;
+  struct child *ch = NULL;
 
   for(e = list_begin(&curr->parent->child_list); e != list_end (&curr->parent->child_list); e = list_next(e))
   {
@@ -193,11 +192,12 @@ process_exit (int status)
       break;
     }
   }
-
+  
   ch->exit_status = status;
   ch->exit = true;
   acquire_file_lock();
-  file_close(thread_current()->own_file); // close its file to allow write
+  file_close(curr->own_file); // close its file to allow write
+  close_files(&curr->file_list);
   release_file_lock();
   
   sema_up(&ch->wait_sema); // wake up parent if waiting
@@ -615,8 +615,6 @@ setup_stack (void **esp, int argc, char **argv)
         void *ret = 0;
         *esp = (char *) *esp - sizeof(void *);
         memcpy(*esp, &ret, sizeof(void *));
-
-        //hex_dump(*esp, *esp, PHYS_BASE-(*esp), true);
 
       }
       else

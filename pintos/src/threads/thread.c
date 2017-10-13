@@ -520,6 +520,21 @@ struct file *get_file(struct list *file_list, int fd)
   }
 }
 
+/* closes all the files upon exit 
+   Call only after acquiring flie_lock */
+void
+close_files(struct list *f_list)
+{
+  struct list_elem *e;
+  while(!list_empty(f_list))
+  {
+    e = list_pop_front(f_list);
+    struct file_map *fmap = list_entry(e, struct file_map, elem);
+    file_close(fmap->file);
+    free(fmap);
+  }
+}
+
 
 
 /* Idle thread.  Executes when no other thread is ready to run.

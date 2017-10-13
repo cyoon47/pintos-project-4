@@ -137,17 +137,11 @@ syscall_handler (struct intr_frame *f)
         unsigned initial_size = *(unsigned *) (esp + 8);
 
         acquire_file_lock();
-        struct file *file_ptr_create = filesys_create(file_create, initial_size);
+        bool created = filesys_create(file_create, initial_size);
         release_file_lock();
 
-        if(file_ptr_create == NULL)
-        {
-          f->eax = false;
-        }
-        else
-        {
-          f->eax = true;
-        }
+        f->eax = created;
+
         break;
 
       case SYS_REMOVE:
@@ -200,7 +194,8 @@ syscall_handler (struct intr_frame *f)
         struct file *fs_file = get_file(&thread_current()->file_list, fs_fd);
         if(fs_file == NULL)
         {
-          return -1;
+          f->eax = -1;
+          return;
         }
         acquire_file_lock();
         f->eax = file_length(fs_file);
@@ -302,13 +297,12 @@ syscall_handler (struct intr_frame *f)
         struct file *seek_file = get_file(&thread_current()->file_list, seek_fd);
         if(seek_file == NULL)
         {
-          f->eax = -1;
           return;
         }
         else
         {
           acquire_file_lock();
-          f->eax = file_seek(seek_file, pos);
+          file_seek(seek_file, pos);
           release_file_lock();
         }
 
@@ -322,7 +316,7 @@ syscall_handler (struct intr_frame *f)
         }
         int tell_fd = *(int *)(esp + 4);
 
-        struct file *tell_file = get_file(&thread_current()->file_list, seek_fd);
+        struct file *tell_file = get_file(&thread_current()->file_list, tell_fd);
         if(tell_file == NULL)
         {
           f->eax = -1;
@@ -331,7 +325,7 @@ syscall_handler (struct intr_frame *f)
         else
         {
           acquire_file_lock();
-          f->eax = file_tell(seek_file, pos);
+          f->eax = file_tell(tell_file);
           release_file_lock();
         }
         break;
@@ -347,13 +341,12 @@ syscall_handler (struct intr_frame *f)
         struct file_map *close_file_map = get_file_map(&thread_current()->file_list, close_fd);
         if(close_file_map == NULL)
         {
-          f->eax = -1;
           return;
         }
         else
         {
           acquire_file_lock();
-          f->eax = file_close(close_file_map->file, pos);
+          file_close(close_file_map->file, pos);
           release_file_lock();
           list_remove(&close_file_map->elem);
           free(close_file_map);

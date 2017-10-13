@@ -176,5 +176,7 @@ void update_ready_list(void);
 void acquire_file_lock(void);
 void release_file_lock(void);
 struct file *get_file(struct list*, int);
+struct file_map *get_file_map(struct list*, int);
+void close_files(struct list*);
 
 #endif /* threads/thread.h */

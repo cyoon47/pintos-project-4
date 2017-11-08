@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <hash.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -15,9 +16,11 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -85,6 +88,9 @@ start_process (void *f_name)
   char *file_name = f_name;
   struct intr_frame if_;
   bool success;
+
+  /* Initialize supplemental page table */
+  hash_init(&thread_current()->s_page_table, page_hash, page_less, NULL);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -202,6 +208,9 @@ process_exit (int status)
   release_file_lock();
   
   sema_up(&ch->wait_sema); // wake up parent if waiting
+
+  // destroy supplementary page table
+  hash_destroy(&thread_current()->s_page_table, destroy_action_func);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -519,6 +528,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  uint8_t *kpage;
+
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
@@ -528,10 +539,24 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+      /* Add a page to supplementary page table */
+      if (!add_page(file, ofs, upage, read_bytes, zero_bytes, writable, TYPE_FILE))
+      {
+        return false;
+      }
+
+      struct s_page_entry *p_entry = page_lookup(upage);
+
       /* Get a page of memory. */
-      uint8_t *kpage = get_frame(PAL_USER);
+      if(page_read_bytes == 0)
+        kpage = insert_frame(PAL_USER | PAL_ZERO, p_entry);
+      else
+        kpage = insert_frame(PAL_USER, p_entry);
+
       if (kpage == NULL)
         return false;
+
+      p_entry->loaded = true;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
@@ -564,7 +589,22 @@ setup_stack (void **esp, int argc, char **argv)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = get_frame (PAL_USER | PAL_ZERO);
+  /* Set up supplementary page table entry for stack*/
+  struct s_page_entry *p_entry = malloc(sizeof(struct s_page_entry));
+  if(!p_entry)
+    return false;
+
+  p_entry->type = TYPE_STACK;
+  p_entry->loaded = false;
+  p_entry->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  p_entry->writable = true;
+
+  kpage = insert_frame (PAL_USER | PAL_ZERO, p_entry);
+  p_entry->loaded = true;
+
+  if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
+    return false;
+
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
@@ -619,7 +659,10 @@ setup_stack (void **esp, int argc, char **argv)
 
       }
       else
+      {
+        free(p_entry);
         free_frame (kpage);
+      }
     }
 
   return success;

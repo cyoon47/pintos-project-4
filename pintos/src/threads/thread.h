@@ -3,6 +3,7 @@
 
 #include <debug.h>
 #include <list.h>
+#include <hash.h>
 #include <stdint.h>
 #include "threads/synch.h"
 
@@ -106,6 +107,9 @@ struct thread
     struct list file_list;              /* list of open files */
     struct file *own_file;              /* its own file to be closed on exit */
     int next_fd;
+
+    /* Supplemental Page Table */
+    struct hash s_page_table;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

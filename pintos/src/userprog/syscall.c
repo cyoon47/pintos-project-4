@@ -4,8 +4,17 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/init.h"
+#include "threads/malloc.h"
+#include "userprog/process.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
 
 static void syscall_handler (struct intr_frame *);
+bool check_pointer(void *ptr);
+bool check_args(void *ptr, int args);
+bool check_string(char *ptr);
 
 /* Reads a byte at user virtual address UADDR.
 UADDR must be below PHYS_BASE.
@@ -28,7 +37,7 @@ get_user (const uint8_t *uaddr)
 static bool
 put_user (uint8_t *udst, uint8_t byte)
 {
-	if(!is_iser_vaddr(udst))
+	if(!is_user_vaddr(udst))
 		return false;
 	int error_code;
 	asm ("movl $1f, %0; movb %b2, %1; 1:"
@@ -346,7 +355,7 @@ syscall_handler (struct intr_frame *f)
         else
         {
           acquire_file_lock();
-          file_close(close_file_map->file, pos);
+          file_close(close_file_map->file);
           release_file_lock();
           list_remove(&close_file_map->elem);
           free(close_file_map);

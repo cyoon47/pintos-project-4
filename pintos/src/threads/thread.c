@@ -11,8 +11,11 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "vm/frame.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -443,7 +446,7 @@ thread_update_donated_priority(struct thread* t)
 
 /* Function to compare wake_up_time of threads for use in insert_list_ordered */
 bool
-thread_compare_wake_up(struct list_elem* a, struct list_elem* b, void *aux)
+thread_compare_wake_up(struct list_elem* a, struct list_elem* b, void *aux UNUSED)
 {
   struct thread* thread_a = list_entry(a, struct thread, elem);
   struct thread* thread_b = list_entry(b, struct thread, elem);
@@ -453,7 +456,7 @@ thread_compare_wake_up(struct list_elem* a, struct list_elem* b, void *aux)
 
 /* Function to compare priority value of threads for use in insert_list_ordered */
 bool
-thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *aux)
+thread_compare_donated_priority(struct list_elem* a, struct list_elem* b, void *aux UNUSED)
 {
   struct thread* thread_a = list_entry(a, struct thread, elem);
   struct thread* thread_b = list_entry(b, struct thread, elem);

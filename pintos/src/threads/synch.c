@@ -290,7 +290,7 @@ lock_held_by_current_thread (const struct lock *lock)
 
 /* Function to compare priority value of locks for use in insert_list_ordered */
 bool
-lock_compare_priority(struct list_elem* a, struct list_elem* b, void *aux)
+lock_compare_priority(struct list_elem* a, struct list_elem* b, void *aux UNUSED)
 {
   struct lock* lock_a = list_entry(a, struct lock, elem);
   struct lock* lock_b = list_entry(b, struct lock, elem);
@@ -408,7 +408,7 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
 /* Function to compare priority value of threads in cond */
 bool
-cond_compare_donated_priority(struct list_elem *a, struct list_elem *b, void *aux)
+cond_compare_donated_priority(struct list_elem *a, struct list_elem *b, void *aux UNUSED)
 {
   struct semaphore sema_a = list_entry(a, struct semaphore_elem, elem)->semaphore;
   struct semaphore sema_b = list_entry(b, struct semaphore_elem, elem)->semaphore;

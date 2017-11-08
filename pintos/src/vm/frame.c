@@ -1,5 +1,7 @@
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 #include "vm/frame.h"
 #include "lib/debug.h"
 
@@ -10,13 +12,15 @@ void init_frame_table(void)
 	lock_init(&frame_lock);
 }
 
-void * get_frame(enum palloc_flags flags)
+/* get a free frame*/
+void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 {
 	ASSERT((flags & PAL_USER));		// make sure to get from user pool
+
 	void *frame = palloc_get_page(flags);
 	if(frame)
 	{
-		add_frame(frame);
+		add_frame(frame, p_entry);
 	}
 	else // ran out of frames. panic for now
 	{
@@ -48,11 +52,12 @@ void free_frame(void *frame)
 }
 
 /* add frame to frame table */
-void add_frame(void *frame)
+void add_frame(void *frame, struct s_page_entry *p_entry)
 {
 	struct frame_entry *fe = malloc(sizeof(struct frame_entry));
 	fe->frame = frame;
 	fe->owner_thread = thread_current();
+	fe->loaded_page = p_entry;
 
 	lock_acquire(&frame_lock);
 	list_push_back(&frame_table, &fe->elem);

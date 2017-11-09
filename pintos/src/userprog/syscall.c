@@ -54,6 +54,14 @@ bool check_pointer(void *ptr)
 	return true;
 }
 
+bool check_pointer_write(void *ptr) 
+{
+  int read_byte = get_user(ptr);
+  if(read_byte == -1)
+    return false;
+  return put_user(ptr, read_byte);
+}
+
 /* checks args number of arguments for the given pointer */
 bool check_args(void *ptr, int args)
 {
@@ -222,7 +230,7 @@ syscall_handler (struct intr_frame *f)
         char *read_buffer = *(char **)(esp + 8);
         unsigned read_size = *(unsigned *) (esp + 12);
 
-        if(!check_pointer(read_buffer) || !check_pointer(read_buffer + read_size)) //check buffer
+        if(!check_pointer_write(read_buffer) || !check_pointer_write(read_buffer + read_size)) //check buffer
         {
           thread_exit(-1);
           return;

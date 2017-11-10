@@ -21,5 +21,6 @@ void init_frame_table(void);
 void * insert_frame(enum palloc_flags, struct s_page_entry *);
 void free_frame(void *);
 void add_frame(void *, struct s_page_entry *);
+void * evict_frame(enum palloc_flags, struct s_page_entry *);
 
 #endif

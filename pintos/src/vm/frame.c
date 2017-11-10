@@ -4,6 +4,7 @@
 #include "threads/thread.h"
 #include "vm/frame.h"
 #include "lib/debug.h"
+#include "vm/swap.c"
 
 /* initialize frame table */
 void init_frame_table(void)
@@ -18,15 +19,13 @@ void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 	ASSERT((flags & PAL_USER));		// make sure to get from user pool
 
 	void *frame = palloc_get_page(flags);
-	if(frame)
+	if(frame == NULL)
 	{
-		add_frame(frame, p_entry);
-	}
-	else // ran out of frames. panic for now
-	{
-		PANIC("get_frame - ran out of frames to allocate");
+		//PANIC("insert_frame - ran out of frames to allocate");
+    frame = evict_frame(flags, p_entry);
 	}
 
+  add_frame(frame, p_entry);
 	return frame;
 }
 
@@ -62,4 +61,45 @@ void add_frame(void *frame, struct s_page_entry *p_entry)
 	lock_acquire(&frame_lock);
 	list_push_back(&frame_table, &fe->elem);
 	lock_release(&frame_lock);
+}
+
+/* evict frame from frame table */
+void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
+{
+  /* victim is selected unthoughtfully for now */
+  struct list_elem *e;
+
+  lock_acquire(&frame_lock);
+  e = list_begin(&frame_table);
+
+  struct frame_entry *fe = list_entry(e, struct frame_entry, elem);
+
+  if(pagedir_is_dirty(fe->owner_thread->pagedir, fe->loaded_page->upage))
+  {
+    if(fe->loaded_page->type == TYPE_FILE)
+    {
+      file_write_at(fe->loaded_page->file, fe->frame,
+                    fe->loaded_page->read_bytes, fe->loaded_page->ofs);
+    }
+    else if(fe->loaded_page->type == TYPE_SWAP)
+    {
+      swap_out(fe->frame, fe->loaded_page->upage);
+    }
+    else //TYPE_STACK
+    {
+      swap_out(fe->frame, fe->loaded_page->upage);
+    }
+  }
+  else
+  {
+  }
+  fe->loaded_page->loaded = false;
+  list_remove(e);
+  lock_release(&frame_lock);
+
+  pagedir_clear_page(fe->owner_thread->pagedir, fe->loaded_page->upage);
+  void * temp = fe->frame;
+  free_frame(fe->frame);
+
+  return palloc_get_page(flags);
 }

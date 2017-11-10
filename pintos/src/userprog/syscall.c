@@ -13,6 +13,7 @@
 
 static void syscall_handler (struct intr_frame *);
 bool check_pointer(void *ptr);
+bool check_pointer_write(void *ptr);
 bool check_args(void *ptr, int args);
 bool check_string(char *ptr);
 
@@ -98,6 +99,8 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   void *esp = f->esp;
+  thread_current()->esp = esp;  // save esp
+
 	if(!check_args(esp, 1)) // check given pointer
 	{
 		thread_exit(-1);

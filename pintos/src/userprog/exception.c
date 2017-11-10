@@ -4,6 +4,8 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -148,8 +150,23 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  if(user && not_present)
+  {
+    if(fault_addr >= f->esp - 32) // faulting address within 32 bytes below esp
+    {
+      if(grow_stack(fault_addr))
+        return;
+    }
+  }
+
   if(!user)
   {
+    if(fault_addr >= thread_current()->esp - 32) // faulting address within 32 bytes below esp
+    {
+      if(grow_stack(fault_addr))
+        return;
+    }
+
     f->eip = (void (*)(void))f->eax;
     f->eax = 0xffffffff;
     return;

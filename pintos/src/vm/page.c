@@ -1,7 +1,11 @@
 #include "vm/page.h"
 #include "threads/vaddr.h"
 #include "threads/thread.h"
+#include "threads/palloc.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
+#include "vm/frame.h"
+#include "threads/malloc.h"
 #include <hash.h>
 
 /* Hash function for hash table */
@@ -79,7 +83,44 @@ add_page(struct file *file, int32_t ofs, uint8_t *upage, uint32_t read_bytes, ui
 
 }
 
+/* Grow stack and return success */
+bool
+grow_stack(void *address)
+{
+	void *stack_addr = pg_round_down(address);
+	if(stack_addr < PHYS_BASE - STACK_LIMIT) // over stack limit
+		return false;
 
+	struct s_page_entry *p_entry = malloc(sizeof(struct s_page_entry));
+	if(!p_entry)
+		return false;
+
+	p_entry->type = TYPE_STACK;
+	p_entry->loaded = false;
+	p_entry->upage = stack_addr;
+	p_entry->writable = true;
+
+	void *frame = insert_frame(PAL_USER, p_entry);
+	if(!frame){
+		free(p_entry);
+		return false;
+	}
+
+	p_entry->loaded = true;
+
+	bool success = install_page(stack_addr, frame, true);
+	if(!success)
+	{
+		free_frame(frame);
+		free(p_entry);
+		return false;
+	}
+
+	if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
+		return false;
+
+	return true;
+}
 
 
 

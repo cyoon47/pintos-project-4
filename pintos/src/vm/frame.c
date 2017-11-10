@@ -24,7 +24,7 @@ void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 	}
 	else // ran out of frames. panic for now
 	{
-		PANIC("get_frame - ran out of frames to allocate");
+		PANIC("insert_frame - ran out of frames to allocate");
 	}
 
 	return frame;

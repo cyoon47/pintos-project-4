@@ -110,6 +110,7 @@ struct thread
 
     /* Supplemental Page Table */
     struct hash s_page_table;
+    void *esp;                          /* saved esp for access in kernel fault */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

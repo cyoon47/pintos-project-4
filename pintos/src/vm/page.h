@@ -3,6 +3,8 @@
 
 #include <hash.h>
 
+#define STACK_LIMIT  (1 << 23) // 8MB stack size
+
 enum page_type
 {
 	TYPE_FILE,
@@ -29,5 +31,6 @@ bool page_less (const struct hash_elem *, const struct hash_elem *, void *);
 void destroy_action_func (struct hash_elem *, void *);
 struct s_page_entry * page_lookup (const void *);
 bool add_page(struct file *, int32_t, uint8_t *, uint32_t, uint32_t, bool, enum page_type);
+bool grow_stack(void *);
 
 #endif

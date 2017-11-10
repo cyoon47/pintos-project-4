@@ -159,6 +159,7 @@ page_fault (struct intr_frame *f)
         return;
     }
   }
+
   if(!user)
   {
     if(fault_addr >= thread_current()->esp - 32) // faulting address within 32 bytes below esp

@@ -6,6 +6,8 @@
 
 #define STACK_LIMIT  (1 << 23) // 8MB stack size
 
+#define STACK_LIMIT  (1 << 23) // 8MB stack size
+
 enum page_type
 {
 	TYPE_FILE,

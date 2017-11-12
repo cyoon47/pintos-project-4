@@ -5,6 +5,7 @@
 #include "vm/frame.h"
 #include "lib/debug.h"
 #include "vm/swap.c"
+#include "userprog/pagedir.h"
 
 /* initialize frame table */
 void init_frame_table(void)
@@ -23,9 +24,11 @@ void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 	{
 		//PANIC("insert_frame - ran out of frames to allocate");
     frame = evict_frame(flags, p_entry);
+    if(frame == NULL)
+      PANIC("evict failed");
 	}
 
-  add_frame(frame, p_entry);
+  	add_frame(frame, p_entry);
 	return frame;
 }
 
@@ -72,34 +75,25 @@ void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
   lock_acquire(&frame_lock);
   e = list_begin(&frame_table);
 
-  struct frame_entry *fe = list_entry(e, struct frame_entry, elem);
-
-  if(pagedir_is_dirty(fe->owner_thread->pagedir, fe->loaded_page->upage))
+  while(true)
   {
-    if(fe->loaded_page->type == TYPE_FILE)
-    {
-      file_write_at(fe->loaded_page->file, fe->frame,
-                    fe->loaded_page->read_bytes, fe->loaded_page->ofs);
-    }
-    else if(fe->loaded_page->type == TYPE_SWAP)
+    struct frame_entry *fe = list_entry(e, struct frame_entry, elem);
+    struct thread *t = fe->owner_thread;
+    if(pagedir_is_accessed(t->pagedir, fe->loaded_page->upage))
+      pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
+    else if(fe->loaded_page->type != TYPE_STACK)
     {
       swap_out(fe->frame, fe->loaded_page->upage);
-    }
-    else //TYPE_STACK
-    {
-      swap_out(fe->frame, fe->loaded_page->upage);
-    }
+      fe->loaded_page->loaded = false;
+      list_remove(&fe->elem);
+      pagedir_clear_page(t->pagedir, fe->loaded_page->upage);
+      palloc_free_page(fe->frame);
+      free(fe);
+      lock_release(&frame_lock);
+      return palloc_get_page(flags);
+    }  
+    e = list_next(e);
+    if(e == list_end(&frame_table))
+      e = list_begin(&frame_table);
   }
-  else
-  {
-  }
-  fe->loaded_page->loaded = false;
-  list_remove(e);
-  lock_release(&frame_lock);
-
-  pagedir_clear_page(fe->owner_thread->pagedir, fe->loaded_page->upage);
-  void * temp = fe->frame;
-  free_frame(fe->frame);
-
-  return palloc_get_page(flags);
 }

@@ -30,7 +30,7 @@ swap_out(void *frame, void *vaddr)
   lock_acquire(&swap_lock);
 
   disk_sector_t sec_no = swap_empty_slot();
-  if(sec_no == DISK_SECTOR_SIZE) //If there is no empty swap slot
+  if(sec_no == 1<<31) //If there is no empty swap slot
   {
     PANIC("swap_out() : Swap-out occurred, but swap space is full.");
   }
@@ -43,6 +43,9 @@ swap_out(void *frame, void *vaddr)
     }
     struct s_page_entry *spe = page_lookup(vaddr);
     spe->swap_sec_no = sec_no;
+    if(spe->type == TYPE_STACK)
+      printf("STACK SWPPAED OUT!!!!!\n");
+    spe->type = TYPE_SWAP;
   }
   lock_release(&swap_lock);
   return;
@@ -62,6 +65,7 @@ swap_in(void *vaddr, void *frame)
   }
   else
   {
+    bitmap_flip(swap_table, spe->swap_sec_no * DISK_SECTOR_SIZE / PGSIZE);
     disk_sector_t iter_sec_no;
     for(iter_sec_no = spe->swap_sec_no; iter_sec_no < spe->swap_sec_no + PGSIZE / DISK_SECTOR_SIZE; iter_sec_no++)
     {
@@ -84,7 +88,7 @@ swap_empty_slot(void)
   }
   else
   {
-    return DISK_SECTOR_SIZE;
+    return 1<<31;
   }
 }
 

@@ -6,6 +6,7 @@
 #include "userprog/process.h"
 #include "vm/frame.h"
 #include "threads/malloc.h"
+#include "vm/swap.h"
 #include <hash.h>
 
 /* Hash function for hash table */
@@ -65,7 +66,7 @@ add_page(struct file *file, int32_t ofs, uint8_t *upage, uint32_t read_bytes, ui
 	if(type == TYPE_FILE)
 	{
 		p_entry->loaded = false;
-
+		p_entry->type = TYPE_FILE;
 		p_entry->file = file;
 		p_entry->ofs = ofs;
 		p_entry->upage = upage;
@@ -125,6 +126,22 @@ grow_stack(void *address)
 		return false;
 
 	return true;
+}
+
+bool load_swap (struct s_page_entry *p_entry)
+{
+	void *frame = insert_frame(PAL_USER, p_entry);
+	if(!frame)
+		return false;
+	if (!install_page (p_entry->upage, frame, p_entry->writable)) 
+    {
+      free_frame (frame);
+      return false; 
+    }
+    swap_in(p_entry->upage, frame);
+    p_entry->loaded = true;
+
+    return true;
 }
 
 

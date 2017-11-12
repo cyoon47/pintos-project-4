@@ -2,11 +2,14 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
+#include "userprog/process.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "vm/page.h"
 #include "threads/palloc.h"
+#include "vm/frame.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -151,12 +154,25 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if(user && not_present)
+  if(user && not_present && is_user_vaddr(fault_addr))
   {
     if(fault_addr >= f->esp - 32) // faulting address within 32 bytes below esp
     {
       if(grow_stack(fault_addr))
         return;
+    }
+  }
+
+  if(true)
+  {
+    struct s_page_entry *spe = page_lookup(fault_addr);
+    if(spe != NULL) //in supplementary page table
+    {
+      if(spe->type == TYPE_SWAP)
+      {
+        if(load_swap(spe))
+          return;
+      }
     }
   }
 
@@ -171,33 +187,6 @@ page_fault (struct intr_frame *f)
     f->eip = (void (*)(void))f->eax;
     f->eax = 0xffffffff;
     return;
-  }
-
-  if(true)
-  {
-    struct s_page_entry *spe = malloc(sizeof(struct s_page_entry));
-    spe = page_lookup(fault_addr);
-    if(spe != NULL) //in supplementary page table
-    {
-      if(!spe->writable && write)
-      {
-        process_exit(-1);
-      }
-      if(spe->type == TYPE_SWAP)
-      {
-      }
-      else if(spe->type == TYPE_FILE)
-      {
-      }
-      else //TYPE_STACK
-      {
-      }
-      void * frame = insert_frame(PAL_USER, spe);
-    }
-    else //not in supplementary page table
-    {
-      void * frame = insert_frame(PAL_USER | PAL_ZERO, spe);
-    }
   }
 
   /* To implement virtual memory, delete the rest of the function

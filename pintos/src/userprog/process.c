@@ -527,6 +527,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (ofs % PGSIZE == 0);
 
   uint8_t *kpage;
+  struct s_page_entry *p_entry;
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
@@ -543,7 +544,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
         return false;
       }
 
-      struct s_page_entry *p_entry = page_lookup(upage);
+      p_entry = page_lookup(upage);
 
       /* Get a page of memory. */
       if(page_read_bytes == 0)

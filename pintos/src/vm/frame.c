@@ -20,13 +20,13 @@ void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 	ASSERT((flags & PAL_USER));		// make sure to get from user pool
 
 	void *frame = palloc_get_page(flags);
-	if(frame == NULL)
+	while(frame == NULL)
 	{
-		//PANIC("insert_frame - ran out of frames to allocate");
-    frame = evict_frame(flags, p_entry);
-    if(frame == NULL)
-      PANIC("evict failed");
-	}
+    	frame = evict_frame(flags, p_entry);
+    	lock_release(&frame_lock);
+    }
+	if(frame == NULL)
+  		PANIC("evict failed");
 
   	add_frame(frame, p_entry);
 	return frame;
@@ -69,7 +69,6 @@ void add_frame(void *frame, struct s_page_entry *p_entry)
 /* evict frame from frame table */
 void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 {
-  /* victim is selected unthoughtfully for now */
   struct list_elem *e;
 
   lock_acquire(&frame_lock);
@@ -81,7 +80,7 @@ void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
     struct thread *t = fe->owner_thread;
     if(pagedir_is_accessed(t->pagedir, fe->loaded_page->upage))
       pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
-    else if(fe->loaded_page->type != TYPE_STACK)
+    else if(fe->loaded_page->allow_swap)
     {
       fe->loaded_page->type = TYPE_SWAP;
       fe->loaded_page->swap_sec_no = swap_out(fe->frame);
@@ -90,7 +89,6 @@ void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
       pagedir_clear_page(t->pagedir, fe->loaded_page->upage);
       palloc_free_page(fe->frame);
       free(fe);
-      lock_release(&frame_lock);
       return palloc_get_page(flags);
     }  
     e = list_next(e);

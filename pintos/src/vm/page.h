@@ -26,6 +26,7 @@ struct s_page_entry{
 	uint32_t read_bytes;
 	uint32_t zero_bytes;
 	bool writable;
+	bool allow_swap;
 
   disk_sector_t swap_sec_no;
 

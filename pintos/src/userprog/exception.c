@@ -172,8 +172,6 @@ page_fault (struct intr_frame *f)
       {
         if(load_swap(spe))
           return;
-        else
-          PANIC("Swap load failed!\n");
       }
     }
   }

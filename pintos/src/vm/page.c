@@ -73,6 +73,7 @@ add_page(struct file *file, int32_t ofs, uint8_t *upage, uint32_t read_bytes, ui
 		p_entry->read_bytes = read_bytes;
 		p_entry->zero_bytes = zero_bytes;
 		p_entry->writable = writable;
+		p_entry->allow_swap = true;
 
 		if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
 			return false;
@@ -105,6 +106,7 @@ grow_stack(void *address)
 	p_entry->loaded = false;
 	p_entry->upage = stack_addr;
 	p_entry->writable = true;
+	p_entry->allow_swap = true;
 
 	void *frame = insert_frame(PAL_USER, p_entry);
 	if(!frame){

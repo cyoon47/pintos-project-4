@@ -597,6 +597,7 @@ setup_stack (void **esp, int argc, char **argv)
   p_entry->loaded = false;
   p_entry->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
   p_entry->writable = true;
+  p_entry->allow_swap = false;
 
   kpage = insert_frame (PAL_USER | PAL_ZERO, p_entry);
   p_entry->loaded = true;

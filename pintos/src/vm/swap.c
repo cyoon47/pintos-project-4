@@ -18,8 +18,8 @@ swap_init(void)
   lock_init(&swap_lock);
 }
 /* Swap out the frame */
-void
-swap_out(void *frame, void *vaddr)
+disk_sector_t
+swap_out(void *frame)
 {
   if(swap_table == NULL)
   {
@@ -30,7 +30,7 @@ swap_out(void *frame, void *vaddr)
   lock_acquire(&swap_lock);
 
   disk_sector_t sec_no = swap_empty_slot();
-  if(sec_no == 1<<31) //If there is no empty swap slot
+  if(sec_no == (uint32_t) 1<<31) //If there is no empty swap slot
   {
     PANIC("swap_out() : Swap-out occurred, but swap space is full.");
   }
@@ -41,14 +41,9 @@ swap_out(void *frame, void *vaddr)
     {
       disk_write(swap_disk, iter_sec_no, kvpage + (iter_sec_no - sec_no) * DISK_SECTOR_SIZE);
     }
-    struct s_page_entry *spe = page_lookup(vaddr);
-    spe->swap_sec_no = sec_no;
-    if(spe->type == TYPE_STACK)
-      printf("STACK SWPPAED OUT!!!!!\n");
-    spe->type = TYPE_SWAP;
   }
   lock_release(&swap_lock);
-  return;
+  return sec_no;
 }
 
 /* Swap in the frame to the given page */

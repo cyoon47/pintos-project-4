@@ -83,7 +83,8 @@ void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
       pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
     else if(fe->loaded_page->type != TYPE_STACK)
     {
-      swap_out(fe->frame, fe->loaded_page->upage);
+      fe->loaded_page->type = TYPE_SWAP;
+      fe->loaded_page->swap_sec_no = swap_out(fe->frame);
       fe->loaded_page->loaded = false;
       list_remove(&fe->elem);
       pagedir_clear_page(t->pagedir, fe->loaded_page->upage);

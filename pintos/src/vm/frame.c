@@ -22,7 +22,7 @@ void * insert_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
 	void *frame = palloc_get_page(flags);
 	while(frame == NULL)
 	{
-    	frame = evict_frame(flags, p_entry);
+    	frame = evict_frame(flags);
     	lock_release(&frame_lock);
     }
 	if(frame == NULL)
@@ -59,6 +59,7 @@ void add_frame(void *frame, struct s_page_entry *p_entry)
 	struct frame_entry *fe = malloc(sizeof(struct frame_entry));
 	fe->frame = frame;
 	fe->owner_thread = thread_current();
+	p_entry->allow_swap = false;
 	fe->loaded_page = p_entry;
 
 	lock_acquire(&frame_lock);
@@ -67,7 +68,7 @@ void add_frame(void *frame, struct s_page_entry *p_entry)
 }
 
 /* evict frame from frame table */
-void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
+void * evict_frame(enum palloc_flags flags)
 {
   struct list_elem *e;
 
@@ -77,20 +78,24 @@ void * evict_frame(enum palloc_flags flags, struct s_page_entry *p_entry)
   while(true)
   {
     struct frame_entry *fe = list_entry(e, struct frame_entry, elem);
-    struct thread *t = fe->owner_thread;
-    if(pagedir_is_accessed(t->pagedir, fe->loaded_page->upage))
-      pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
-    else if(fe->loaded_page->allow_swap)
+    if(fe->loaded_page->allow_swap)
     {
-      fe->loaded_page->type = TYPE_SWAP;
-      fe->loaded_page->swap_sec_no = swap_out(fe->frame);
-      fe->loaded_page->loaded = false;
-      list_remove(&fe->elem);
-      pagedir_clear_page(t->pagedir, fe->loaded_page->upage);
-      palloc_free_page(fe->frame);
-      free(fe);
-      return palloc_get_page(flags);
-    }  
+    	struct thread *t = fe->owner_thread;
+    	if(pagedir_is_accessed(t->pagedir, fe->loaded_page->upage))
+	      pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
+	    else
+	    {
+	      fe->loaded_page->type = TYPE_SWAP;
+	      fe->loaded_page->swap_sec_no = swap_out(fe->frame);
+	      
+	      fe->loaded_page->loaded = false;
+	      list_remove(&fe->elem);
+	      pagedir_clear_page(t->pagedir, fe->loaded_page->upage);
+	      palloc_free_page(fe->frame);
+	      free(fe);
+	      return palloc_get_page(flags);
+	    }  
+    }
     e = list_next(e);
     if(e == list_end(&frame_table))
       e = list_begin(&frame_table);

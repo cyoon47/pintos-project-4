@@ -20,6 +20,7 @@
 #include "threads/palloc.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
+#include "vm/swap.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "userprog/exception.h"
@@ -112,6 +113,7 @@ main (void)
 #ifdef FILESYS
   /* Initialize file system. */
   disk_init ();
+  swap_init();
   filesys_init (format_filesys);
 #endif
 

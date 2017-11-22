@@ -8,6 +8,8 @@
 #include "threads/malloc.h"
 #include "vm/swap.h"
 #include <hash.h>
+#include "filesys/file.h"
+#include "lib/string.h"
 
 /* Hash function for hash table */
 unsigned
@@ -80,14 +82,6 @@ add_page(struct file *file, int32_t ofs, uint8_t *upage, uint32_t read_bytes, ui
 		return true;
 	}
 	/* TODO: other page additions */
-	else if(type == TYPE_SWAP)
-  {
-		return false;
-  }
-  else
-  {
-    return false;
-  }
 }
 
 /* Grow stack and return success */
@@ -96,25 +90,25 @@ grow_stack(void *address)
 {
 	void *stack_addr = pg_round_down(address);
 	if(stack_addr < PHYS_BASE - STACK_LIMIT) // over stack limit
+	{
 		return false;
+	}
 
 	struct s_page_entry *p_entry = malloc(sizeof(struct s_page_entry));
 	if(!p_entry)
 		return false;
 
 	p_entry->type = TYPE_STACK;
-	p_entry->loaded = false;
+	p_entry->loaded = true;
 	p_entry->upage = stack_addr;
 	p_entry->writable = true;
-	p_entry->allow_swap = true;
+	p_entry->allow_swap = false;
 
 	void *frame = insert_frame(PAL_USER, p_entry);
 	if(!frame){
 		free(p_entry);
 		return false;
 	}
-
-	p_entry->loaded = true;
 
 	bool success = install_page(stack_addr, frame, true);
 	if(!success)
@@ -125,25 +119,67 @@ grow_stack(void *address)
 	}
 
 	if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
+	{
 		return false;
-
+	}
 	return true;
 }
 
 bool load_swap (struct s_page_entry *p_entry)
 {
+	p_entry->allow_swap = false;
 	void *frame = insert_frame(PAL_USER, p_entry);
 	if(!frame)
+	{
 		return false;
+	}
 	if (!install_page (p_entry->upage, frame, p_entry->writable)) 
     {
       free_frame (frame);
       return false; 
     }
-    swap_in(p_entry->upage, frame);
+    swap_in(p_entry->swap_sec_no, frame);
     p_entry->loaded = true;
-
+    p_entry->allow_swap = true;
     return true;
+}
+
+bool load_file(struct s_page_entry *p_entry)
+{
+	void *frame;
+	p_entry->allow_swap = false;
+	if(p_entry->read_bytes == 0)
+		frame = insert_frame(PAL_USER | PAL_ZERO, p_entry);
+	else
+		frame = insert_frame(PAL_USER, p_entry);
+
+	if(frame == NULL)
+		return false;
+
+	if(!install_page(p_entry->upage, frame, p_entry->writable))
+	{
+		free_frame (frame);
+		return false;
+	}
+	
+	if(p_entry->read_bytes > 0)
+      {
+      	acquire_file_lock();
+      	file_seek (p_entry->file, p_entry->ofs);
+        /* Load this page. */
+        if (file_read (p_entry->file, frame, p_entry->read_bytes) != (int) p_entry->read_bytes)
+          {
+            free_frame (frame);
+            release_file_lock();
+            return false; 
+          }
+        release_file_lock();
+        memset (frame + p_entry->read_bytes, 0, p_entry->zero_bytes);
+      }
+	
+	p_entry->loaded = true;
+	p_entry->allow_swap = true;
+	return true;
 }
 
 

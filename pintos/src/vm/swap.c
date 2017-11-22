@@ -3,13 +3,10 @@
 #include "devices/disk.h"
 #include "threads/vaddr.h"
 
-struct bitmap *swap_table = NULL;
-struct lock swap_lock;
-
 void
 swap_init(void)
 {
-  struct disk *swap_disk = disk_get(1, 1);
+  swap_disk = disk_get(1, 1);
   swap_table = bitmap_create(disk_size(swap_disk) * DISK_SECTOR_SIZE / PGSIZE);
   if(swap_table == NULL)
   {
@@ -21,12 +18,7 @@ swap_init(void)
 disk_sector_t
 swap_out(void *frame)
 {
-  if(swap_table == NULL)
-  {
-    swap_init();
-  }
   void *kvpage = pg_round_down(frame);
-  struct disk *swap_disk = disk_get(1, 1);
   lock_acquire(&swap_lock);
 
   disk_sector_t sec_no = swap_empty_slot();
@@ -48,30 +40,27 @@ swap_out(void *frame)
 
 /* Swap in the frame to the given page */
 void
-swap_in(void *vaddr, void *frame)
+swap_in(disk_sector_t sec_no, void *frame)
 {
-  void *vpage = pg_round_down(vaddr);
-  struct s_page_entry *spe = page_lookup(vpage);
-  struct disk *swap_disk = disk_get(1, 1);
   lock_acquire(&swap_lock);
-  if(spe == NULL || !bitmap_test(swap_table, spe->swap_sec_no * DISK_SECTOR_SIZE / PGSIZE)) //If there is no such slot
+  if(!bitmap_test(swap_table, sec_no * DISK_SECTOR_SIZE / PGSIZE)) //If there is no such slot
   {
     PANIC("swap_in() : Swap in has occurred with wrong address.");
   }
   else
   {
-    bitmap_flip(swap_table, spe->swap_sec_no * DISK_SECTOR_SIZE / PGSIZE);
+    bitmap_flip(swap_table, sec_no * DISK_SECTOR_SIZE / PGSIZE);
     disk_sector_t iter_sec_no;
-    for(iter_sec_no = spe->swap_sec_no; iter_sec_no < spe->swap_sec_no + PGSIZE / DISK_SECTOR_SIZE; iter_sec_no++)
+    for(iter_sec_no = sec_no; iter_sec_no < sec_no + PGSIZE / DISK_SECTOR_SIZE; iter_sec_no++)
     {
-      disk_read(swap_disk, iter_sec_no, frame + (iter_sec_no - spe->swap_sec_no) * DISK_SECTOR_SIZE);
+      disk_read(swap_disk, iter_sec_no, frame + (iter_sec_no - sec_no) * DISK_SECTOR_SIZE);
     }
   }
   lock_release(&swap_lock);
   return;
 }
 
-/* Find the start sec_no of 4 consecutive empty slot. Return DISK_SECTOR_SIZE when fails. */
+/* Find the start sec_no of a empty slot. Return 1<<31 on fail. */
 disk_sector_t
 swap_empty_slot(void)
 {

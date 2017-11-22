@@ -526,9 +526,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  uint8_t *kpage;
-  struct s_page_entry *p_entry;
-
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
@@ -539,43 +536,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Add a page to supplementary page table */
-      if (!add_page(file, ofs, upage, read_bytes, zero_bytes, writable, TYPE_FILE))
+      if (!add_page(file, ofs, upage, page_read_bytes, page_zero_bytes, writable, TYPE_FILE))
       {
         return false;
       }
-
-      p_entry = page_lookup(upage);
-
-      /* Get a page of memory. */
-      if(page_read_bytes == 0)
-        kpage = insert_frame(PAL_USER | PAL_ZERO, p_entry);
-      else
-        kpage = insert_frame(PAL_USER, p_entry);
-
-      if (kpage == NULL)
-        return false;
-
-      p_entry->loaded = true;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          free_frame (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          free_frame (kpage);
-          return false; 
-        }
-
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }

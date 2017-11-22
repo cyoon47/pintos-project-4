@@ -10,6 +10,8 @@
 #include "vm/page.h"
 #include "threads/palloc.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
+#include "threads/synch.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -154,16 +156,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if(user && not_present && is_user_vaddr(fault_addr))
-  {
-    if(fault_addr >= f->esp - 32) // faulting address within 32 bytes below esp
-    {
-      if(grow_stack(fault_addr))
-        return;
-    }
-  }
-
-  if(true)
+  if(not_present && is_user_vaddr(fault_addr))
   {
     struct s_page_entry *spe = page_lookup(fault_addr);
     if(spe != NULL) //in supplementary page table
@@ -173,22 +166,32 @@ page_fault (struct intr_frame *f)
         if(load_swap(spe))
           return;
       }
+      else if(spe->type == TYPE_FILE)
+      {
+        if(load_file(spe))
+          return;
+      }
+    }
+
+    else if(user && fault_addr >= f->esp - 32) // faulting address within 32 bytes below esp
+    {
+      if(grow_stack(fault_addr))
+        return;
+    }
+    else if(!user && fault_addr >= thread_current()->esp - 32)
+    {
+      if(grow_stack(fault_addr))
+        return;
     }
   }
 
   if(!user)
   {
-    if(fault_addr >= thread_current()->esp - 32) // faulting address within 32 bytes below esp
-    {
-      if(grow_stack(fault_addr))
-        return;
-    }
-
     f->eip = (void (*)(void))f->eax;
     f->eax = 0xffffffff;
     return;
   }
-
+  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */

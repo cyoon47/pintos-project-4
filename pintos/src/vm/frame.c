@@ -6,6 +6,7 @@
 #include "lib/debug.h"
 #include "vm/swap.c"
 #include "userprog/pagedir.h"
+#include "filesys/file.h"
 
 /* initialize frame table */
 void init_frame_table(void)
@@ -81,12 +82,27 @@ void * evict_frame(enum palloc_flags flags)
     if(fe->loaded_page->allow_swap)
     {
     	struct thread *t = fe->owner_thread;
-    	if(pagedir_is_accessed(t->pagedir, fe->loaded_page->upage))
-	      pagedir_set_accessed(t->pagedir, fe->loaded_page->upage, false);
+    	struct s_page_entry *p = fe->loaded_page;
+    	if(pagedir_is_accessed(t->pagedir, p->upage))
+	      pagedir_set_accessed(t->pagedir, p->upage, false);
 	    else
 	    {
-	      fe->loaded_page->type = TYPE_SWAP;
-	      fe->loaded_page->swap_sec_no = swap_out(fe->frame);
+	    	if(pagedir_is_dirty(t->pagedir, p->upage) || p->type == TYPE_SWAP)
+	    	{
+	    		if(fe->loaded_page->type == TYPE_MMAP)
+	    		{
+	    			acquire_file_lock();
+	    			file_seek(p->file, p->ofs);
+	    			file_write(p->file, fe->frame, p->read_bytes);
+	    			release_file_lock();
+	    		}
+	    		else
+	    		{
+	    			p->type = TYPE_SWAP;
+	      			p->swap_sec_no = swap_out(fe->frame);
+	    		}
+	    	}
+	      
 	      
 	      fe->loaded_page->loaded = false;
 	      list_remove(&fe->elem);

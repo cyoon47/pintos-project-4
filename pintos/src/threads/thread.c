@@ -636,6 +636,9 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->file_list);
   t->next_fd = 2;
   t->esp = NULL;
+
+  list_init(&t->mmap_list);
+  t->next_mapid = 0;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

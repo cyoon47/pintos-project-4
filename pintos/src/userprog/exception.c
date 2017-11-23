@@ -171,6 +171,11 @@ page_fault (struct intr_frame *f)
         if(load_file(spe))
           return;
       }
+      else if(spe->type == TYPE_MMAP)
+      {
+        if(load_file(spe))
+          return;
+      }
     }
 
     else if(user && fault_addr >= f->esp - 32) // faulting address within 32 bytes below esp

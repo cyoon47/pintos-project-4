@@ -6,7 +6,7 @@
 #include <hash.h>
 #include <stdint.h>
 #include "threads/synch.h"
-
+#include "vm/page.h"
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -112,6 +112,9 @@ struct thread
     struct hash s_page_table;
     void *esp;                          /* saved esp for access in kernel fault */
 
+    struct list mmap_list;
+    int next_mapid;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -138,6 +141,14 @@ struct file_map
 {
   int fd;
   struct file *file;
+  struct list_elem elem;
+};
+
+/* struct to manage mmap pages*/
+struct mmap_page
+{
+  int mapid;
+  struct s_page_entry *p_entry;
   struct list_elem elem;
 };
 

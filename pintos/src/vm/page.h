@@ -12,7 +12,8 @@ enum page_type
 {
 	TYPE_FILE,
 	TYPE_SWAP,
-	TYPE_STACK
+	TYPE_STACK,
+	TYPE_MMAP
 };
 
 struct s_page_entry{
@@ -28,7 +29,7 @@ struct s_page_entry{
 	bool writable;
 	bool allow_swap;
 
-  disk_sector_t swap_sec_no;
+  	disk_sector_t swap_sec_no;
 
 	struct hash_elem elem;
 };

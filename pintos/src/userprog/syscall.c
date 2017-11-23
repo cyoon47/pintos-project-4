@@ -371,6 +371,78 @@ syscall_handler (struct intr_frame *f)
           list_remove(&close_file_map->elem);
           free(close_file_map);
         }
+        break;
+
+      case SYS_MMAP:
+        if(!check_args(esp + 4, 2))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int mmap_fd = *(int *)(esp + 4);
+        char *mmap_addr = *(char **)(esp + 8);
+        if(!get_file(&thread_current()->file_list, mmap_fd))
+        {
+          f->eax = -1;
+          return;
+        }
+        struct file *file = file_reopen(get_file(&thread_current()->file_list, mmap_fd));
+        if(file == NULL || file_length(file) == 0 || mmap_addr == 0 || !is_user_vaddr(mmap_addr) || (int) mmap_addr % PGSIZE != 0)
+        {
+          f->eax = -1;
+          return;
+        }
+
+        if(page_lookup(mmap_addr))
+        {
+          f->eax = -1;
+          return;
+        }
+
+        uint32_t read_bytes = file_length(file);
+        off_t ofs = 0;
+        while(read_bytes > 0)
+        {
+          size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+          size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+          if (!add_page(file, ofs, mmap_addr, page_read_bytes, page_zero_bytes, true, TYPE_MMAP))
+          {
+            struct thread *t = thread_current();
+            struct list_elem *e;
+
+            for(e = list_begin(&t->mmap_list); e != list_end(&t->mmap_list); e = list_next(e))
+            {
+              struct mmap_page *mp = list_entry(e, struct mmap_page, elem);
+              if(mp->mapid == t->next_mapid)
+              {
+                hash_delete(&t->s_page_table, &mp->p_entry->elem);
+                list_remove(&mp->elem);
+                free(mp->p_entry);
+                free(mp);
+              }
+            }
+
+            file_close(file);
+            f->eax = -1;
+            return;
+          }
+
+          read_bytes -= page_read_bytes;
+          mmap_addr += PGSIZE;
+          ofs += PGSIZE;
+        }
+        f->eax = thread_current()->next_mapid++;
+        break;
+
+      case SYS_UNMAP:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int mapping = *(int *) (esp + 4);
+
 
         break;
     }

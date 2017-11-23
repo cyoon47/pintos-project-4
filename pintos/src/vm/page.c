@@ -64,24 +64,38 @@ add_page(struct file *file, int32_t ofs, uint8_t *upage, uint32_t read_bytes, ui
 	if(!p_entry)
 		return false;
 
+	p_entry->loaded = false;
+	p_entry->file = file;
+	p_entry->ofs = ofs;
+	p_entry->upage = upage;
+	p_entry->read_bytes = read_bytes;
+	p_entry->zero_bytes = zero_bytes;
+	p_entry->writable = writable;
+	p_entry->allow_swap = true;
+
 	// Add a file
 	if(type == TYPE_FILE)
 	{
-		p_entry->loaded = false;
 		p_entry->type = TYPE_FILE;
-		p_entry->file = file;
-		p_entry->ofs = ofs;
-		p_entry->upage = upage;
-		p_entry->read_bytes = read_bytes;
-		p_entry->zero_bytes = zero_bytes;
-		p_entry->writable = writable;
-		p_entry->allow_swap = true;
-
-		if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
-			return false;
-		return true;
 	}
-	/* TODO: other page additions */
+
+	else if(type == TYPE_MMAP)
+	{
+		p_entry->type = TYPE_MMAP;
+		struct mmap_page *mp = malloc(sizeof(struct mmap_page));
+		if(!mp)
+		{
+			free(p_entry);
+			return false;
+		}
+		mp->mapid = thread_current()->next_mapid;
+		mp->p_entry = p_entry;
+		list_push_back(&thread_current()->mmap_list, &mp->elem);
+	}
+
+	if(hash_insert(&thread_current()->s_page_table, &p_entry->elem) != NULL)
+		return false;
+	return true;
 }
 
 /* Grow stack and return success */

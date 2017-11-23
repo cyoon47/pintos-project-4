@@ -11,6 +11,8 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 #include "vm/page.h"
+#include "userprog/pagedir.h"
+#include "vm/frame.h"
 
 static void syscall_handler (struct intr_frame *);
 bool check_pointer(void *ptr);
@@ -439,8 +441,9 @@ syscall_handler (struct intr_frame *f)
           thread_exit(-1);
           return;
         }
-        int munmap_fd = *(int *) (esp + 4);
+        int mapping = *(int *) (esp + 4);
 
+        thread_munmap(mapping);
 
         break;
     }

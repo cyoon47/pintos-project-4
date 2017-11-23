@@ -13,6 +13,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "filesys/file.h"
+#include "userprog/pagedir.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "vm/frame.h"
@@ -474,6 +475,40 @@ thread_has_max_priority(void)
   struct thread* front = list_entry(list_front(&ready_list), struct thread, elem);
 
   return curr->donated_priority >= front->donated_priority;
+}
+
+void
+thread_munmap(int mapping)
+{
+  struct thread *t = thread_current();
+  struct list_elem *e;
+
+  for(e = list_begin(&t->mmap_list); e != list_end(&t->mmap_list);)
+  {
+    struct mmap_page *mp = list_entry(e, struct mmap_page, elem);
+    if(mp->mapid == mapping)
+    {
+      if(mp->p_entry->loaded)   // if it is loaded in frame, free the frame.
+      {
+        if(pagedir_is_dirty(t->pagedir, mp->p_entry->upage))
+        {
+          acquire_file_lock();
+          file_seek(mp->p_entry->file, mp->p_entry->ofs);
+          file_write(mp->p_entry->file, (void *) pagedir_get_page(t->pagedir, mp->p_entry->upage), mp->p_entry->read_bytes);
+          release_file_lock();
+        }
+
+        free_frame((void *)pagedir_get_page(t->pagedir, mp->p_entry->upage));
+        pagedir_clear_page(t->pagedir, mp->p_entry->upage);
+      }
+
+      hash_delete(&t->s_page_table, &mp->p_entry->elem);
+      e = list_next(e);
+      list_remove(&mp->elem);
+      free(mp->p_entry);
+      free(mp);
+    }
+  }
 }
 
 /* Function to update ready_list to reflect changes in priority */

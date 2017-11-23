@@ -209,6 +209,12 @@ process_exit (int status)
   
   sema_up(&ch->wait_sema); // wake up parent if waiting
 
+  int i;
+  for(i = 0; i < curr->next_mapid; i++)
+  {
+    thread_munmap(i);
+  }
+
   // destroy supplementary page table
   hash_destroy(&thread_current()->s_page_table, destroy_action_func);
 

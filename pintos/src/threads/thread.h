@@ -188,6 +188,7 @@ void thread_update_donated_priority(struct thread*);
 bool thread_compare_wake_up (struct list_elem*, struct list_elem*, void *);
 bool thread_compare_donated_priority(struct list_elem*, struct list_elem*, void *);
 bool thread_has_max_priority(void);
+void thread_munmap(int mapping);
 void update_ready_list(void);
 void acquire_file_lock(void);
 void release_file_lock(void);

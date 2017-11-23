@@ -10,6 +10,7 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "devices/input.h"
+#include "vm/page.h"
 
 static void syscall_handler (struct intr_frame *);
 bool check_pointer(void *ptr);
@@ -444,6 +445,58 @@ syscall_handler (struct intr_frame *f)
         int mapping = *(int *) (esp + 4);
 
 
+        break;
+
+        
+      case SYS_MMAP:
+        if(!check_args(esp + 4, 2))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int mmap_fd = *(int *)(esp + 4);
+        void *addr = *(void **)(esp + 8);
+
+        if(!is_user_vaddr(addr) || (pg_ofs(addr) != 0))
+        {
+          f->eax = -1;
+          return;
+        }
+        struct file_map *mmap_fm = get_file_map(&thread_current()->file_list, mmap_fd);
+        if(mmap_fm == NULL)
+        {
+          f->eax = -1;
+          return;
+        }
+        acquire_file_lock();
+        uint32_t read_bytes = file_length(mmap_fm->file);
+        release_file_lock();
+
+        while(read_bytes > 0)
+        {
+          //TODO : deny writing invalid or pre-assigned address
+          if(!add_page(mmap_fm->file, 0, addr, read_bytes, pg_round_up(read_bytes)-read_bytes, true, TYPE_FILE))
+          {
+            f->eax = -1;
+            return;
+          }
+          read_bytes -= PGSIZE;
+          addr += PGSIZE;
+        }
+        f->eax = (uint32_t)addr / PGSIZE;
+
+        break;
+
+      case SYS_MUNMAP:
+        if(!check_args(esp + 4, 1))
+        {
+          thread_exit(-1);
+          return;
+        }
+        int munmap_fd = *(int *)(esp + 4);
+        void *munmap_addr = munmap_fd * PGSIZE;
+        //TODO : write to file
+        palloc_free_page(munmap_addr);
         break;
     }
 }

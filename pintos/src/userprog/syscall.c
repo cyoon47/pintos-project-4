@@ -381,33 +381,30 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         int mmap_fd = *(int *)(esp + 4);
-        char *mmap_addr = *(char **)(esp + 8);
+        void *addr = *(void **)(esp + 8);
         if(!get_file(&thread_current()->file_list, mmap_fd))
         {
           f->eax = -1;
           return;
         }
         struct file *file = file_reopen(get_file(&thread_current()->file_list, mmap_fd));
-        if(file == NULL || file_length(file) == 0 || mmap_addr == 0 || !is_user_vaddr(mmap_addr) || (int) mmap_addr % PGSIZE != 0)
+        if(file == NULL || file_length(file) == 0 || addr == 0 || !is_user_vaddr(addr) || pg_ofs(addr) != 0)
         {
           f->eax = -1;
           return;
         }
 
-        if(page_lookup(mmap_addr))
-        {
-          f->eax = -1;
-          return;
-        }
-
+        acquire_file_lock();
         uint32_t read_bytes = file_length(file);
+        release_file_lock();
+
         off_t ofs = 0;
         while(read_bytes > 0)
         {
           size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
           size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-          if (!add_page(file, ofs, mmap_addr, page_read_bytes, page_zero_bytes, true, TYPE_MMAP))
+          if (page_lookup(addr) || !add_page(file, ofs, addr, page_read_bytes, page_zero_bytes, true, TYPE_MMAP))
           {
             struct thread *t = thread_current();
             struct list_elem *e;
@@ -430,61 +427,10 @@ syscall_handler (struct intr_frame *f)
           }
 
           read_bytes -= page_read_bytes;
-          mmap_addr += PGSIZE;
+          addr += PGSIZE;
           ofs += PGSIZE;
         }
         f->eax = thread_current()->next_mapid++;
-        break;
-
-      case SYS_UNMAP:
-        if(!check_args(esp + 4, 1))
-        {
-          thread_exit(-1);
-          return;
-        }
-        int mapping = *(int *) (esp + 4);
-
-
-        break;
-
-        
-      case SYS_MMAP:
-        if(!check_args(esp + 4, 2))
-        {
-          thread_exit(-1);
-          return;
-        }
-        int mmap_fd = *(int *)(esp + 4);
-        void *addr = *(void **)(esp + 8);
-
-        if(!is_user_vaddr(addr) || (pg_ofs(addr) != 0))
-        {
-          f->eax = -1;
-          return;
-        }
-        struct file_map *mmap_fm = get_file_map(&thread_current()->file_list, mmap_fd);
-        if(mmap_fm == NULL)
-        {
-          f->eax = -1;
-          return;
-        }
-        acquire_file_lock();
-        uint32_t read_bytes = file_length(mmap_fm->file);
-        release_file_lock();
-
-        while(read_bytes > 0)
-        {
-          //TODO : deny writing invalid or pre-assigned address
-          if(!add_page(mmap_fm->file, 0, addr, read_bytes, pg_round_up(read_bytes)-read_bytes, true, TYPE_FILE))
-          {
-            f->eax = -1;
-            return;
-          }
-          read_bytes -= PGSIZE;
-          addr += PGSIZE;
-        }
-        f->eax = (uint32_t)addr / PGSIZE;
-
         break;
 
       case SYS_MUNMAP:
@@ -493,10 +439,9 @@ syscall_handler (struct intr_frame *f)
           thread_exit(-1);
           return;
         }
-        int munmap_fd = *(int *)(esp + 4);
-        void *munmap_addr = munmap_fd * PGSIZE;
-        //TODO : write to file
-        palloc_free_page(munmap_addr);
+        int munmap_fd = *(int *) (esp + 4);
+
+
         break;
     }
 }

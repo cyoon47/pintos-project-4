@@ -482,12 +482,15 @@ thread_munmap(int mapping)
 {
   struct thread *t = thread_current();
   struct list_elem *e;
+  struct file *close_file = NULL;
 
   for(e = list_begin(&t->mmap_list); e != list_end(&t->mmap_list);)
   {
     struct mmap_page *mp = list_entry(e, struct mmap_page, elem);
     if(mp->mapid == mapping)
     {
+      close_file = mp->p_entry->file;
+      mp->p_entry->allow_swap = false;
       if(mp->p_entry->loaded)   // if it is loaded in frame, free the frame.
       {
         if(pagedir_is_dirty(t->pagedir, mp->p_entry->upage))
@@ -508,6 +511,12 @@ thread_munmap(int mapping)
       free(mp->p_entry);
       free(mp);
     }
+  }
+  if(close_file != NULL)
+  {
+    acquire_file_lock();
+    file_close(close_file);
+    release_file_lock();
   }
 }
 

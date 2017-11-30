@@ -1,443 +1,427 @@
-﻿+---------------------------+
-|          CS 330           |
-| PROJECT 2: USER PROGRAMS  |
-|      DESIGN DOCUMENT      |
-+---------------------------+
- 
+﻿			+---------------------------+
+			|	    CS 330	    |
+			| PROJECT 3: VIRTUAL MEMORY |
+			|       DESIGN DOCUMENT	    |
+			+---------------------------+
+
 ---- GROUP ----
- 
+
 >> Fill in the names and email addresses of your group members.
- 
+
 Mingi Shin <yuagnun@gmail.com>
 Chang Yoon Lee <cyoon47@kaist.ac.kr>
- 
+
 ---- PRELIMINARIES ----
- 
+
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-
-Team 1, project 2, 0 tokens
-
+Team 1, project 3, tokens
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
- 
 
+			PAGE TABLE MANAGEMENT
+			=====================
 
-  ARGUMENT PASSING
-  ================
- 
- 
 ---- DATA STRUCTURES ----
- 
+
 >> A1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
- 
+
+From /threads/thread.h
+
+struct thread
+{
+  ...
+  /* Supplemental Page Table */
+  struct hash s_page_table;
+  void *esp;
+
+  struct list mmap_list;
+  int next_mapid;
+};
+
+struct hash s_page_table
+: supplemental page table which holds additional information of pages for loading.
+We used a provided hash data structure.
 
 
-No struct or global variable was added or changed to implement argument passing.
 
+From /vm/frame.h
 
+struct list frame_table;
+: list of frames.
+
+struct lock frame_lock;
+: mutual exclusive lock to avoid racing condition when referring and manipulating
+the frame table.
+
+struct frame_entry{
+  void *frame;
+  struct list_elem elem;
+  struct thread *owner_thread;
+  struct s_page_entry *loaded_page;
+};
+
+void *frame;
+: the physical address of the frame.
+
+struct list_elem elem;
+: list_elem to insert the frame_entry into frame_table.
+
+struct thread *owner_thread;
+: the thread that owns the page loaded in the frame.
+
+struct s_page_entry *loaded_page;
+: the corresponding s_page_entry of the page loaded in the frame.
+
+From /vm/page.h
+
+enum page_type
+{
+  TYPE_FILE,
+  TYPE_SWAP,
+  TYPE_STACK,
+  TYPE_MMAP
+};
+
+enum page_type allows distinction between different types of pages.
+
+struct s_page_entry{
+  enum page_type type; 	// type of page
+  bool loaded;		// whether the page is loaded in physical memory
+  struct file *file;
+
+  int32_t ofs;
+  void *upage;
+  uint32_t read_bytes;
+  uint32_t zero_bytes;
+  bool writable;
+  bool allow_swap;
+
+  disk_sector_t swap_sec_no;
+
+  struct hash_elem elem;
+};
+
+enum page_type type;
+: the type of the page defined in enum page_type.
+
+bool loaded;
+: indicates whether the page is loaded in physical memory.
+
+struct file *file;
+: the file that the page should be loaded from for initial executable loading and mmap pages.
+
+int32_t ofs;
+: offset in the file that the page should be loaded from.
+
+void *upage;
+: the user virtual address for the page.
+
+uint32_t read_bytes;
+: the number bytes to be read from the file.
+
+uint32_t zero_bytes;
+: the number of zero bytes to be appended at the end of the page.
 
 
 ---- ALGORITHMS ----
- 
->> A2: Briefly describe how you implemented argument parsing.  How do
->> you arrange for the elements of argv[] to be in the right order?
->> How do you avoid overflowing the stack page?
+
+>> A2: In a few paragraphs, describe your code for locating the frame,
+>> if any, that contains the data of a given page.
+
+Given a page, we can look up the supplemental page entry using the page_lookup() function, which rounds down the given user virtual address to a multiple of PGSIZE, and finds the s_page_entry in the supplemental page table hash. 
+
+Once we found the s_page_entry, we can check the boolean loaded to check if the page is loaded in physical memory. 
+If loaded is false, there is no frame that contains the data of the page. 
+If loaded is true, we can retrieve the frame using the pagedir_get_page() function using the thread’s page directory and the page’s user virtual address as the arguments.
 
 
+>> A3: How does your code coordinate accessed and dirty bits between
+>> kernel and user virtual addresses that alias a single frame, or
+>> alternatively how do you avoid the issue?
 
+Firstly, there should be no case of two or more pages pointing to the same frame, since we did not implement sharing of frames. If two pages refer to the same part of a file, then there will be two separate frames loaded.
 
-First, when the argument is passed to process_execute(), and split the given file_name into arguments. Then, we create a thread named the first argument, and pass the file_name by calling thread_create() with appropriate arguments. After the thread is correctly created, it starts executing start_process with file_name as the argument. Within start_process, it calls load() with file_name as one of the arguments. Within load, file_name is split into several strings with space as delimiter using strtok_r, and each argument is stored in the array argv, and the number of arguments is stored in argc. After load finishes correctly loading the program, it calls setup_stack, which does most of the work in argument passing.
+The second case is about aliasing between the user virtual page and kernel virtual page. In our code, all accesses to the user data is done through the user virtual address. Even in kernel, during system calls or exceptions, the kernel uses the user virtual address to locate the supplemental pages to load the required data. Therefore, kernel virtual addresses are never used to access user data, and the aliasing issue should be solved.
 
+---- SYNCHRONIZATION ----
 
-In setup_stack, which takes argv and argc made in load as arguments, if we successfully install_page(), we set up the stack to pass arguments to the process. Firstly, we scan argv array backwards, and decrement esp by the length of the given argument + 1, to correctly allocate space in the stack to copy the argument along with the string terminator. Then, we store esp in arg_ptr[] array to remember the starting position of each argument in stack. Afterwards, we copy the contents of the argv to the memory pointed by esp. 
+>> A4: When two user processes both need a new frame at the same time,
+>> how are races avoided?
 
+We made use of frame_lock to control access to the frame table.
 
-After all the contents have been pushed, we round the stack pointer down to be multiple of 4 for faster access.
+Firstly, the two processes will call palloc_get_page() to be allocated a physical address. This function avoids race by using pool lock to control access to the bitmap containing the physical addresses.
 
+If palloc_get_page() is successful, the process will call add_frame() to add the allocated frame to the frame table, and if palloc_get_page() is unsuccessful, the process will call evict_frame to evict a frame from the frame table and add call add_frame() afterwards.
 
-Next, the addresses of the actual arguments, which were stored in arg_ptr[] array are pushed onto the stack, with rightmost argument at the highest address in the stack. After all the addresses have been pushed, argc is pushed onto the stack to indicate how many arguments are present. Finally, a fake return address (0x0) is pushed on the stack.
-
-
-The elements of argv[] are always pushed onto the stack such that the elements to the right always occupy a higher address in the stack.
-
-
-We did not implement explicit methods to avoid overflowing the stack page. In order to detect the overflow, calculation of how much space we require is needed when setting up the stack. We thought that this was unnecessary, and just pushed the arguments onto the stack without checking for overflow. The reason is that even if we detect the overflow, we have no choice but to terminate the process abnormally. However, when we push onto the stack without checking, when there is overflow, page fault will occur and the page fault handler will automatically terminate the process for us. Using this method, we avoid additional calculations so that setting the stack is a little faster, and also do not have any critical errors.
-
-
+No matter which function each process calls, the two functions control access to the frame table using the frame_lock, so no two processes can access the frame table at the same time. Thus, race conditions are avoided by ensuring mutual exclusion when modifying the frame table.
 
 
 ---- RATIONALE ----
- 
->> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+>> A5: Why did you choose the data structure(s) that you did for
+>> representing virtual-to-physical mappings?
+
+We used hash for storing the user pages in each process. This choice was made because the user addresses are expected to be sparse, thus using array would take up too much memory to be efficient. Using hash was a reasonable choice that uses little memory and takes short time to look up the pages.
+Frames were stored in a list, as it is simple to implement, and also does not take up too much memory. 
+
+To implement virtual-to-physical mappings, we included all information needed to load a page from the file in supplemental page entry, s_page_entry. This allows us to locate and load the data into the physical memory, as this project implements lazy loading and memory mapping. We also included bool loaded and allow_swap in s_page_entry. The boolean loaded allows us to easily check if the page is loaded in the physical memory for easy deallocation when the process exits. Allow_swap is used to prevent swapping out of the frame when the kernel is working on the frame, such as when writing the contents of the frame to file, or loading the data to the frame.
+
+In frame_entry, we included the owner_thread and loaded_page. Owner thread allows us to locate the process that has its page loaded in the frame, which is used to access the page directory and clear the page when a frame is evicted from the physical memory. loaded_page is used to set the boolean loaded and to check if allow_swap is true during eviction.
+
+Using these data structures, full information synchronization between the virtual and physical memory should be possible.
 
 
-strtok() uses an internal static pointer in a static buffer to indicate the position of next token. This means that when there is interrupt, and the thread is preempted, there is a possibility that the contents strtok() was referring to have been changed when the thread executing strtok() gets hold of the CPU again, making the execution incorrect.
+		       PAGING TO AND FROM DISK
+		       =======================
 
-
-strtok_r() is the reentrant version of strtok(). It stores all its information locally or through the arguments passed by the caller, thus it removes the possibility of data being changed by other threads. In Pintos, thread switching is very possible, and to ensure correctness of the code, we must use the reentrant version, strtok_r().
-
-
- 
->> A4: In Pintos, the kernel separates commands into a executable name
->> and arguments.  In Unix-like systems, the shell does this
->> separation.  Identify at least two advantages of the Unix approach.
-
-
-Firstly, when shell does the separation, the time spent in kernel can be reduced. This will reduce system overhead, allowing more time for the user processes to do more useful work, instead of wasting precious CPU time in the kernel code.
-
-
-Secondly, the user input can be checked before being passed to the kernel. This way, the shell can detect if there is an error in the command and inform accordingly, or check if the command length is too long for the kernel to handle and reject the command. It will prevent passing error-prone command to the kernel and possibly causing kernel error. This will prevent kernel from executing illegal commands, and the worst possible outcome is for the shell to fail, and the kernel will still be running and the whole system will continue running.
-
-
- 
-    SYSTEM CALLS
-    ============
- 
 ---- DATA STRUCTURES ----
- 
->> B1: Copy here the declaration of each new or changed `struct' or 
+
+>> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+From /threads/thread.h
 
-1. thread/thread.c
-
-
-struct lock file_lock
-- Used to ensure mutual exclusion in file system code.
-
-
-2. thread/thread.h
-
-
-a) struct thread {
-        ...
-/* For communication between parent and child */
-        struct thread *parent;  /* parent thread */
-struct list child_list; /* list of child threads */
-
-
-/* For managing files opened by thread */
-struct list file_list;  /* list of open files */
-struct file *own_file;  /* its own file to be closed on exit */
-int next_fd;
-}
-
-
-struct thread *parent
-- To send signal to its parent when exit, child thread saves its parent.
-  It also accesses its struct child through parent, which stores all the 
- children’s struct child
-
-
-struct list child_list
-- This list stores the children’s struct child to get appropriate 
- information about the child.
-
-
-struct list file_list
-- To map the file descriptor to the files, and manage the open files.
-
-
-struct file *own_file
-- Executable file of the thread. Closed when process_exit() is called to 
- allow write again.
-
-
-int next_fd
-- File descriptor that will be assigned to the next opening file. Initially 
- 2, incremented when the file is opened.
-
-
-
-
-b) struct child
-- struct to hold information necessary for parent about the child process
-
-
-struct child 
+struct thread
 {
-  tid_t tid;
-  int exit_status;
-  bool load_success;
-  bool exit;
-  struct semaphore wait_sema;
-  struct list_elem elem;
+  ...
+  /* Supplemental Page Table */
+  struct hash s_page_table;
+  void *esp;
+
+  struct list mmap_list;
+  int next_mapid;
 };
 
+void *esp
+: esp is saved to struct thread when exception occurs, to allow the kernel to access the stack pointer when exception occurs in kernel.
 
-tid_t tid
-- Same as pid. To find the child to wait for its exit when wait() is called    
- and to get relevant information on child.
+From /vm/swap.h
 
+struct lock swap_lock;
+: it is used to ensure mutual exclusion when accessing the swap table.
 
-int exit_status
-- To return the child’s exit status when wait() is called by its parent.
+struct disk *swap_disk;
+: the swap disk, at hd1:1.
 
-
-bool load_success
-- Whether loading the executable is succeeded. exec() returns -1 if this is 
- false.
-
-
-bool exit
-- Indicates whether the child has already exited. If this is false, the 
- parent wait for wait_sema below to be up.
-
-
-struct semaphore wait_sema
-- Semaphore to sync process loading and waiting between child and parent.
-
-
-struct list_elem elem
-- To put children thread into the child_list of the parent thread struct.
-
-
-c) struct file_map
-- struct to manage file descriptor and representing files
-
-
-struct file_map
-{
-  int fd;
-  struct file *file;
-  struct list_elem elem;
-};
-
-
-int fd
-- file descriptor of the open file below.
-
-
-struct file *file
-- Pointer to the file opened.
-
-
-struct list_elem elem
-- list_elem to put in the file_list of the thread which opened this file.
+struct bitmap *swap_table;
+: a bitmap to keep track of loaded pages in swap disk.
 
 
 
 
-
-
->> B2: Describe how file descriptors are associated with open files.
->> Are file descriptors unique within the entire OS or just within a
->> single process?
-
-
-File descriptors are distinct just within a single process. Every time a file is opened, fd is incremented by 1, starting from 2, as 0 and 1 are preserved for STDIN and STDOUT. This method works as files are not inherited and are uniquely identified in Pintos.
-By this approach, our design assures that a single thread can open up to (UINT_MAX-1) file descriptors (excluding 0, 1).
-
-
-
-
- 
 ---- ALGORITHMS ----
- 
->> B3: Describe your code for reading and writing user data from the
->> kernel.
+
+>> B2: When a frame is required but none is free, some frame must be
+>> evicted.  Describe your code for choosing a frame to evict.
+
+We chose second-chance algorithm for choosing a frame to evict.
+Choosing that, we could utilize provided accessed bit and associated
+features, and easily implement fast and efficient algorithm.
+
+If there is no free frame, palloc_get_page() fails and evict_frame()
+is called.
+evict_frame() iterates on all swappable frame entries of frame_table,
+checking if the accessed bit of the frame is 1 using pagedir_is_accessed().
+If the frame is accessed, set its accessed bit to 0 and move on to the
+next frame.
+If the frame is not accessed, that frame is chosen to be evicted.
+Before evicting, check if frame needs to be swapped out or written to
+the file system. If dirty bit of the frame is set to 1 or the frame is
+one has been swapped in, we use swap_out() in swap.c to swap out the
+frame. (After memory mapped file is implemented, if the frame contains
+memory-mapped file, it will be written to the corresponding file.)
+After that, the boolean loaded of the supplemental page to false, and
+the entry is removed from the frame table. Page is removed from the
+pagedir of owner thread, memory frame is freed, and free the memory
+containing struct frame_entry.
+Finally, attempt to get page using palloc_get_page() and return the
+obtained page address.
+We made this process repeats if final palloc_get_page() gives NULL,
+to assure the thread occurred page_fault can obtain the page and
+keep running on our OS properly.
+
+>> B3: When a process P obtains a frame that was previously used by a
+>> process Q, how do you adjust the page table (and any other data
+>> structures) to reflect the frame Q no longer has?
+
+First, in evict_frame, we check whether the page held by Q has been modified, by calling pagedir_is_dirty(). If it has been modified, we store the change by writing to the relevant file if the page was a mmap page, or writing to the swap disk if the page type is something else. This ensures that the change is kept when the page is loaded back in later by Q.
+
+Then, we set boolean loaded in the s_page_entry to false, indicating that the page is no longer loaded. We remove the frame entry that held Q’s page from the frame table, and clears the corresponding page directory for Q using pagedir_clear_page() to ensure that later accesses to the page page faults. We also deallocate the physical address by calling palloc_free_page(). Finally, the previously malloced frame entry is freed.
+
+After we ensure that Q cannot access the frame by deallocating the user virtual address and physical address, we allocate a new frame to P, initializing and allocating all the necessary data for the frame.
 
 
-We modified and used the function get_user() and put_user() given in the Pintos manual to avoid referencing invalid pointer. These two functions will cause page fault in the kernel if user has passed an invalid pointer to the kernel. We modified the code in page_fault() in userprog/exception.c to set eax to 0xffffffff and copy its former value into eip without panic if the fault occurred in kernel as mentioned in the Pintos manual. We used is_user_vaddr(), which is the function returns true when the given VADDR is a user virtual address, to satisfy the requirements for get_user() and put_user().
+>> B4: Explain your heuristic for deciding whether a page fault for an
+>> invalid virtual address should cause the stack to be extended into
+>> the page that faulted.
 
-
-When get_user() returns a value other than -1, we know that the address is valid, and we directly read/write to the address.
-
-
- 
->> B4: Suppose a system call causes a full page (4,096 bytes) of data
->> to be copied from user space into the kernel.  What is the least
->> and the greatest possible number of inspections of the page table
->> (e.g. calls to pagedir_get_page()) that might result?  What about
->> for a system call that only copies 2 bytes of data?  Is there room
->> for improvement in these numbers, and how much?
-
-
-Full page:
-The least number of inspection will be 1, when the data starts at the beginning of the page, and all data lies within the page. In this case, only one page needs to be verified. 
-The worst case is when the 4096 bytes of data are split byte by byte into all different virtual pages. In this case, all 4096 bytes need to be checked to ensure that they are correctly referenced.
-
-
-2 bytes:
-The least number of inspection will also be 1, when the two bytes lie within the same page. However, in the worst case page inspection only needs to occur twice, once for each byte.
-
-
-The number can be improved by making full use of pages when loading data. Page inspection occurs only when the data lie on different pages. If we can pack the data into the same page, then the inspection does not occur as often.
-
-
-
-
-
-
->> B5: Briefly describe your implementation of the "wait" system call
->> and how it interacts with process termination.
-
-
-It accepts the pid of child process and returns the child’s exit status.
-
-
-The tid(In our design, same as pid) and exit status are stored and tracked inside struct child. Calling wait() system call calls process_wait(). In process_wait(), we iterate through the list of the children of current thread (thread which called wait()) to find matching tid. If we cannot find one, it is not a direct child so return -1.
-
-
-Once we find one, we check if child->exit is true. It is initialized to false, and is set to be true when the child exits and have already set the exit_status for the parent to read. If it is true, it means that process_exit() has been called by child and the parent can read the exit status without waiting. Then we remove the exitted child from the list of children, and return its exit status. If exit is false, then the function uses sema_down() on struct child’s wait_sema to wait for child’s exit. Corresponding sema_up() will be called at the end of process_exit() by the child, then the remaining part of process_wait() will be run.
-
-
-This way, the wait() system call works correctly no matter whether the child exits before or after the call to wait().
-
-
- 
->> B6: Any access to user program memory at a user-specified address
->> can fail due to a bad pointer value.  Such accesses must cause the
->> process to be terminated.  System calls are fraught with such
->> accesses, e.g. a "write" system call requires reading the system 
->> call number from the user stack, then each of the call's three
->> arguments, then an arbitrary amount of user memory, and any of
->> these can fail at any point.  This poses a design and
->> error-handling problem: how do you best avoid obscuring the primary
->> function of code in a morass of error-handling?  Furthermore, when
->> an error is detected, how do you ensure that all temporarily
->> allocated resources (locks, buffers, etc.) are freed?  In a few
->> paragraphs, describe the strategy or strategies you adopted for
->> managing these issues.  Give an example.
- 
-When a user process uses a system call, it passes the system call number in the user stack. The system call handler will check the validity of the esp pointer, by making sure that the pointer points to an address below PHYS_BASE and it is indeed a pointer in the user’s address space. This is done through calling get_user() function indirectly in functions check_pointer(), check_args() and check_string() in syscall.c. If the address of esp is valid, we can read the system call number from the user stack. 
-
-
-Depending on the system call number, the system expects different number of arguments. When there are more arguments to read, the system checks the validity of the addresses the arguments are stored in the user stack by calling one of the functions mentioned above. If the argument is a pointer, we check the validity of the address pointed by the given pointer.
-
-
-If any of these addresses passed is invalid, the get_user() function will cause a segmentation fault, and will return -1. This is detected by the system and the system will call thread_exit(-1) to terminate the process in an abnormal way.
-
-
-By checking the validity of addresses before doing any of the required work of system call, we can separate the primary function of the system call from the error handling. Also, the temporary allocated resources are freed as soon as they are not needed in process functions or in process_exit(), thus the system can ensure that there is no memory leak. 
-
-
-As an example, consider the write system call. The system checks whether esp, where the syscall number should be stored, is a valid user address. After that, we can determine that the syscall number corresponds to that of write(), and the system proceeds to read the three arguments in the user stack. The system checks whether esp+4, esp+8, esp+12, the addresses where the arguments are stored, are valid user addresses. Afterwards, since the second argument is a pointer, of size given by the third argument, the system checks whether the address pointed by the second argument, and the address size bytes after that are valid user addresses. If all these checks pass, system proceeds to the primary function. If any of these checks fails, the system calls thread_exit(-1), terminating the process and freeing all temporarily allocated data.
+We check if the faulting address is within 32 bytes below the stack pointer. If it is within 32 bytes, we assume that it is a stack access and grow the stack, if the stack size does not exceed STACK_LIMIT, which is 8MB. This heuristic was chosen because PUSHA instruction accesses 32 bytes below the stack pointer, which should be a valid stack access. Since stack accesses then to be sequential, accesses below 32 bytes of esp were considered to be invalid memory accesses.
 
 
 ---- SYNCHRONIZATION ----
- 
->> B7: The "exec" system call returns -1 if loading the new executable
->> fails, so it cannot return before the new executable has completed
->> loading.  How does your code ensure this?  How is the load
->> success/failure status passed back to the thread that calls "exec"?
+
+>> B5: Explain the basics of your VM synchronization design.  In
+>> particular, explain how it prevents deadlock.  (Refer to the
+>> textbook for an explanation of the necessary conditions for
+>> deadlock.)
+
+We used two additional locks for this project, namely frame_lock and swap_lock, that controls access to system-wide frame table and swap table/disk.
+
+The basic principle is that whenever processes attempt to modify the system-wide data structures, for example the frame table, we made sure that the process acquires the corresponding lock before changes are made to the shared resources. This way, synchronization among the processes while accessing the frames and swap space can be ensured.
+
+To avoid deadlocks, we made sure that processes only acquire locks when they need them, and also no interleaving acquiring of two different locks are possible. For example, whenever possible, we did not put any lock_acquire within another lock_acquire, which can cause deadlocks. The only case when a process can acquire both the frame_lock and swap_lock is within evict_frame() in frame.c, where it acquires the frame_lock and then acquires swap_lock when call to swap_out() is made. However, no deadlock is possible, since the swap_lock is accessed only via calls to swap_in() and swap_out(). For deadlock to occur, there must be an attempt to acquire frame_lock in either swap_in() or swap_out(), but this never happens.
+
+Also, when accessing the file system, we used file_lock. However, we ensured that file_lock is acquired just before the file system access and released right after access is finished, so deadlocks will not occur.
+
+>> B6: A page fault in process P can cause another process Q's frame
+>> to be evicted.  How do you ensure that Q cannot access or modify
+>> the page during the eviction process?  How do you avoid a race
+>> between P evicting Q's frame and Q faulting the page back in?
+
+Upon selecting Q’s frame to be evicted, pagedir_clear_page() is called on the page. This will cause page faults when Q tries to access the same page, thus preventing access or modification to the page. When page fault occurs as Q tries to access the page, the page should be loaded to physical memory again before Q can access the page again. Therefore, Q cannot access or modify the page during the eviction process.
+
+Faulting the page back in can only be done after the frame is fully evicted, as loading needs to acquire frame_lock, which is held by P until the eviction is finished. Also, while Q’s page is being faulted in, allow_swap for the page should be set to false, thus P can only evict the page after faulting in finishes. This should avoid any race condition between eviction and loading of the same page.
 
 
-exec system call is implemented by calling process_execute(). In process_execute(), thread_create is called, creating the new process and adding the struct child to the parent process’s child_list after initializing it. The parent process looks at this struct child and waits for the process to finish loading by calling sema_down on the wait_sema stored in the struct child. 
+>> B7: Suppose a page fault in process P causes a page to be read from
+>> the file system or swap.  How do you ensure that a second process Q
+>> cannot interfere by e.g. attempting to evict the frame while it is
+>> still being read in?
+
+Whenever a page is loaded from the file system or swap, allow_swap in page’s supplemental page entry is set to false. In evict_frame, the code checks at first whether the page’s allow_swap is set to true before trying to evict that page. If the page is still being loaded, allow_swap should be set to false, and that page should not be a candidate for eviction.
+
+Once the page finishes being read in, allow_swap is set to true, allowing the page to be evicted again.
 
 
-The child process executes start_process function at first. It loads the executable file, and indicates whether the load is successful in the local variable success. If the load is successful, it sets load_success variable in its struct child to true, and it it is unsuccessful, sets load_success to false. After load_success is updated, the child calls sema_up on the wait_sema, synchronizing with the parent process and signalling it that the load_success variable has been updated.
+>> B8: Explain how you handle access to paged-out pages that occur
+>> during system calls.  Do you use page faults to bring in pages (as
+>> in user programs), or do you have a mechanism for "locking" frames
+>> into physical memory, or do you use some other design?  How do you
+>> gracefully handle attempted accesses to invalid virtual addresses?
 
+When access to paged-out page occurs during system calls, page fault should occur and the paged-out page is loaded back to memory.
 
-When the parent thread wakes up, it checks the child’s load_success variable in struct child. If it indicates that the load has failed, proces_execute() returns -1. Otherwise, it returns the tid of the child process.
-
-
- 
->> B8: Consider parent process P with child process C.  How do you
->> ensure proper synchronization and avoid race conditions when P
->> calls wait(C) before C exits?  After C exits?  How do you ensure
->> that all resources are freed in each case?  How about when P
->> terminates without waiting, before C exits?  After C exits?  Are
->> there any special cases?
-
-
-process_wait // Skeleton of SYS_WAIT handling
-{
-        ...
-        if(!ch->exit)                          // if the child has not exited yet
-                sema_down(&ch->wait_sema);// wait for the child to exit and call sema_up at exit
-        ...
-}
-
-
-process_exit // Skeleton of SYS_EXIT handling
-{
-        ...
-        ch->exit_status = status;
-        ch->exit = true;
-        acquire_file_lock();
-file_close(curr->own_file); // close its file to allow write
-close_files(&curr->file_list);
-release_file_lock();
-
-
-        sema_up(&ch->wait_sema);        // wake up parent if waiting
-        ...
-}
-
-
-If P calls wait(C) before C exits, since process_exit is not called by C yet, C.exit is false. Then P tries to sema_down on C.wait_sema, which has the value 0 if process_exit is not called yet. Thus the run of process_wait is suspended to sema_down, and it waits for process_exit to be called by C. When C calls process_exit, it will call sema_up and process_wait can return to its run.
-
-
-If P calls wait(C) after C exits, C.exit is true. So process_wait will just run        through. The exit status of C is saved at C.exit_status, thus process_wait can refer and return it.
-
-
-Every time the process exits by SYS_EXIT, process_exit() frees struct file of its executable by calling file_close(). After that call, close_files() is called to close opened files and free corresponding file_map structures. Lastly, it destroys the process’s page directory.
-
-
-If P is terminated before C exits, C is orphaned. However, when C exits, all its allocated resources are freed in thread_exit() and process_exit() methods. This does not require the parent’s existence, thus all resources can be freed within process_exit(). Therefore, all resources can be freed in all the cases above.
+If an invalid virtual address is given, the page fault handler will not be able to find any supplemental page entry corresponding to the faulting address, and will kill the process with exit status of -1.
 
 
 ---- RATIONALE ----
- 
- 
->> B9: Why did you choose to implement access to user memory from the
->> kernel in the way that you did?
+
+>> B9: A single lock for the whole VM system would make
+>> synchronization easy, but limit parallelism.  On the other hand,
+>> using many locks complicates synchronization and raises the
+>> possibility for deadlock but allows for high parallelism.  Explain
+>> where your design falls along this continuum and why you chose to
+>> design it this way.
+
+We used a two locks to control accesses to the frame table and swap table. This will allow some kind of parallelism to the VM system, there is a lock each to control access to each system-wide shared data structures, so they will not affect each other’s performance. Also, by keeping the number of locks small, it is easier to keep track of locking to avoid any deadlocks. Using small number of locks also makes the code easier to understand, without the trouble of making sense of highly interleaved locking structure.
+
+			 MEMORY MAPPED FILES
+			 ===================
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+From /threads/thread.h
+
+struct thread
+{
+  ...
+  /* Supplemental Page Table */
+  struct hash s_page_table;
+  void *esp;
+
+  struct list mmap_list;
+  int next_mapid;
+};
+
+struct list mmap_list;
+: a list of struct mmap_page to keep track of mmap pages in a process.
+
+int next_mapid;
+: the next mapid to use upon calling mmap
+
+struct mmap_page
+{
+  int mapid;
+  struct s_page_entry *p_entry;
+  struct list_elem elem;
+};
+
+int mapid;
+: the mapid allocated to the file corresponding to the mmap page.
+
+struct s_page_entry *p_entry;
+: the s_page_entry of the mmap page.
+
+struct list_elem elem;
+: list_elem for insertion into mmap_list in thread.h.
 
 
-We chose to check only that the pointer is below PHYS_BASE and deference the pointer using the get_user() method. In the Pintos manual, it is said that this method is faster than the method that verifies the validity of the user-provided pointer, so we chose to implement this way. This method did not seem too complicated, and since it is the faster option of the two, it seemed to be a better choice.
+---- ALGORITHMS ----
+
+>> C2: Describe how memory mapped files integrate into your virtual
+>> memory subsystem.  Explain how the page fault and eviction
+>> processes differ between swap pages and other pages.
+
+Memory mapped files are kept in each thread’s mmap_list, similar to how each thread keeps track of its open files. When mmap system call occurs, mmap file is processed and its pages are added to the supplemental page table, and it is given a mapid. The mmap pages are kept separately for easy access when munmap is called, and fast access to only the mmap pages are required.
+
+mmap files are mostly similar to executable files, in that they are read from file upon loading into physical memory. The differences during page fault and eviction is that for swap pages, when a page fault occurs, the contents are read from the swap disk into the physical memory. However, memory mapped pages are always read from the file. For eviction, dirty executable pages and swap pages are written to swap disk, while dirty mmap pages are written directly to the original file. On calling munmap or process exit, all dirty mmap pages are written to the mmap file as well.
+
+>> C3: Explain how you determine whether a new file mapping overlaps
+>> any existing segment.
+
+When mmap is called, the file is added page by page into the supplemental page table. Before adding to the supplemental page table, page_lookup() is called on the address that the page should be stored. If it returns non-null value, that means that there is already a page present in that address and all mmap pages added previously are unmapped and mmap fails by returning -1.
 
 
+---- RATIONALE ----
 
+>> C4: Mappings created with "mmap" have similar semantics to those of
+>> data demand-paged from executables, except that "mmap" mappings are
+>> written back to their original files, not to swap.  This implies
+>> that much of their implementation can be shared.  Explain why your
+>> implementation either does or does not share much of the code for
+>> the two situations.
 
->> B10: What advantages or disadvantages can you see to your design
->> for file descriptors?
+A lot of the implementation is shared between executable pages and mmap pages. 
 
+mmap files are loaded just like the executable files as they both create pages by reading from a file. Thus in add_page(), the part where we create the s_page_entry is exactly the same except for the page type. Also, upon page fault, demand-paging from executables and mmap files share exactly the same code, load_file(). This is because demand-paging for the two pages both require reading from the file.
 
-Every time the thread opens a file, next_fd is assigned as a file descriptor and then incremented. Closing file does not release fd.
+When the contents in the page are written back upon eviction, most of the implementation is shared too. When the evicted page is not dirty, there is no need to write the contents to the swap disk/original file. Therefore, the frame is freed and no changes to the s_page_entry is made. When the page is demanded again, the contents will be read from the files.
 
+Since mmap and executable pages are very similar in nature, we decided to use the same implementation for both cases whenever possible, saving coding time and making it easier to understand.
 
-In this approach, the process control system can save time and space for calculating new fd to be assigned. Incrementing fd does not take much time and needs only few bytes for an integer, compared to the approach that frees every fd when closing the file.
+			   SURVEY QUESTIONS
+			   ================
 
-
-Whereas this design is not suitable for a process that open and close a lot of files. Regardless of the number of closed files, opening more than (UINT_MAX - 2) files in total will make fd run out and occur unexpected behavior. Most of Pintos user program examples are not designed to be run for a very long time or open that many files, but this can be a serious problem for a server or a general purpose OS.
- 
->> B11: The default tid_t to pid_t mapping is the identity mapping.
->> If you changed it, what advantages are there to your approach?
-
-
-We used the identity mapping.
-
-
-
-
-  SURVEY QUESTIONS
-  ================
- 
 Answering these questions is optional, but it will help us improve the
 course in future quarters.  Feel free to tell us anything you
 want--these questions are just to spur your thoughts.  You may also
 choose to respond anonymously in the course evaluations at the end of
 the quarter.
- 
+
 >> In your opinion, was this assignment, or any one of the three problems
 >> in it, too easy or too hard?  Did it take too long or too little time?
- 
+
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
- 
+
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
- 
+
 >> Do you have any suggestions for the TAs to more effectively assist
 >> students, either for future quarters or the remaining projects?
- 
+
 >> Any other comments?
+

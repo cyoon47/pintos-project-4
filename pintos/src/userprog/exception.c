@@ -161,20 +161,30 @@ page_fault (struct intr_frame *f)
     struct s_page_entry *spe = page_lookup(fault_addr);
     if(spe != NULL) //in supplementary page table
     {
+      spe->allow_swap = false;
       if(spe->type == TYPE_SWAP)
       {
         if(load_swap(spe))
+        {
+          spe->allow_swap = true;
           return;
+        }
       }
       else if(spe->type == TYPE_FILE)
       {
         if(load_file(spe))
+        {
+          spe->allow_swap = true;
           return;
+        }
       }
       else if(spe->type == TYPE_MMAP)
       {
         if(load_file(spe))
+        {
+          spe->allow_swap = true;
           return;
+        }
       }
     }
 

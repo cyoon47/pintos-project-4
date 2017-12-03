@@ -16,7 +16,7 @@ Chang Yoon Lee <cyoon47@kaist.ac.kr>
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-Team 1, project 3, tokens
+Team 1, project 3, 4 tokens
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course

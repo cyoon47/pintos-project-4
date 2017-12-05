@@ -36,6 +36,7 @@ access_cache_block(disk_sector_t disk_sector, void *mem_loc, off_t ofs, size_t s
 {
 	lock_acquire(&cache_lock);
 	struct cache_block *cb = cache_lookup(disk_sector);
+	
 	if(cb == NULL)
 	{
 		cb = evict_cache_block(disk_sector);
@@ -44,19 +45,22 @@ access_cache_block(disk_sector_t disk_sector, void *mem_loc, off_t ofs, size_t s
 			PANIC("Failed to evict a cache block!");
 		}
 	}
+	else
+	{
+		cb->num_access++;
+	}
+	
+	cb->accessed = true;
 	lock_release(&cache_lock);
 
 	if(type == FILE_READ)
 	{
 		memcpy(mem_loc, (uint8_t *)&cb->block+ofs, size);
-		cb->accessed = true;
-		cb->dirty = false;
 		cb->num_access--;
 	}
 	else if(type == FILE_WRITE)
 	{
 		memcpy((uint8_t *)&cb->block+ofs, mem_loc, size);
-		cb->accessed = true;
 		cb->dirty = true;
 		cb->num_access--;
 	}

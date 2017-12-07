@@ -33,5 +33,8 @@ void cache_init(void);
 struct cache_block* cache_lookup(disk_sector_t);
 void access_cache_block(disk_sector_t, void *, off_t, size_t, enum access_mode);
 struct cache_block* evict_cache_block(disk_sector_t);
+void write_back(void);
+void read_ahead(disk_sector_t, int);
+void thread_read_ahead(void *);
 
 #endif

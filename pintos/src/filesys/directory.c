@@ -6,6 +6,8 @@
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 
+
+bool dir_empty(struct inode *inode);
 /* A directory. */
 struct dir 
   {
@@ -26,7 +28,7 @@ struct dir_entry
 bool
 dir_create (disk_sector_t sector, size_t entry_cnt) 
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  return inode_create (sector, entry_cnt * sizeof (struct dir_entry), true);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -156,6 +158,8 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector)
   if (lookup (dir, name, NULL, NULL))
     goto done;
 
+  inode_add_dir(inode_sector, inode_get_inumber(dir_get_inode(dir)));
+
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
      current end-of-file.
@@ -201,6 +205,14 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
+  /* directory is open */
+  if(inode_isdir(inode) && inode_get_open_cnt(inode) > 1)
+    goto done;
+
+  /* directory is not empty */
+  if(inode_isdir(inode) && !dir_empty(inode))
+    goto done;
+
   /* Erase directory entry. */
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
@@ -233,4 +245,37 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         } 
     }
   return false;
+}
+
+/* checks whether the directory is empty by checking the dir_entry in it. */
+bool
+dir_empty(struct inode *inode)
+{
+  struct dir_entry e;
+  off_t pos = 0;
+
+  while (inode_read_at (inode, &e, sizeof e, pos) == sizeof e)
+  {
+    if(e.in_use)
+      return false;
+    pos += sizeof(e);
+  }
+
+  return true;
+}
+
+/* bunch of helper functions since struct dir cannot be accessed outside directory.c */
+bool
+dir_get_parent(struct dir *dir, struct inode **inode)
+{
+  *inode = inode_open(inode_get_parent(dir_get_inode(dir)));
+  if(inode == NULL)
+    return false;
+  return true;
+}
+
+bool
+dir_is_root(struct dir *dir)
+{
+  return inode_get_inumber(dir_get_inode(dir)) == ROOT_DIR_SECTOR;
 }

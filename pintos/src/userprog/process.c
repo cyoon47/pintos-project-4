@@ -117,6 +117,9 @@ start_process (void *f_name)
     }
   }
 
+  if(thread_current()->curr_dir == NULL)
+    thread_current()->curr_dir = dir_open_root();
+
   if (!success) 
   {
     ch->load_success = false;
@@ -206,6 +209,9 @@ process_exit (int status)
   file_close(curr->own_file); // close its file to allow write
   close_files(&curr->file_list);
   release_file_lock();
+
+  if(thread_current()->curr_dir != NULL)
+    dir_close(thread_current()->curr_dir);
   
   sema_up(&ch->wait_sema); // wake up parent if waiting
 

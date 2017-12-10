@@ -14,6 +14,7 @@
 #include "threads/malloc.h"
 #include "filesys/file.h"
 #include "userprog/pagedir.h"
+#include "filesys/directory.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "vm/frame.h"
@@ -105,6 +106,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  initial_thread->curr_dir = NULL;    // defer setting curr_dir until everything is set up.
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -212,6 +214,16 @@ thread_create (const char *name, int priority,
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
+
+  // Set new thread's directory
+  if(thread_current()->curr_dir == NULL)
+  {
+    t->curr_dir = NULL;
+  }
+  else
+  {
+    t->curr_dir = dir_reopen(thread_current()->curr_dir);  
+  }
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -579,7 +591,14 @@ close_files(struct list *f_list)
   {
     e = list_pop_front(f_list);
     struct file_map *fmap = list_entry(e, struct file_map, elem);
-    file_close(fmap->file);
+    if(fmap->isdir)
+    {
+      dir_close(fmap->dir);
+    }
+    else
+    {
+      file_close(fmap->file);
+    }
     free(fmap);
   }
 }

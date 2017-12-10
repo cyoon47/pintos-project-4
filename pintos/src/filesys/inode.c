@@ -7,13 +7,14 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include "filesys/cache.h"
+#include "filesys/file.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
 #define DISK_NUM_PTR 128
 #define INDIRECT_BLOCK_SIZE (DISK_NUM_PTR*DISK_SECTOR_SIZE)
-#define MAX_FILE_SIZE 1<<23
+#define MAX_FILE_SIZE (1<<23)
 
 /* On-disk inode.
    Must be exactly DISK_SECTOR_SIZE bytes long. */
@@ -25,7 +26,9 @@ struct inode_disk
     unsigned allocated;
     unsigned inner_index;
     unsigned outer_index;
-    uint32_t unused[122];               /* Not used. */
+    unsigned isdir;
+    disk_sector_t parent_sector;
+    uint32_t unused[120];               /* Not used. */
   };
 
 struct indirect_block
@@ -54,6 +57,8 @@ struct inode
     unsigned allocated;
     unsigned inner_index;
     unsigned outer_index;
+    unsigned isdir;
+    disk_sector_t parent_sector;
   };
 
 bool inode_allocate(struct inode_disk *);
@@ -100,7 +105,7 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (disk_sector_t sector, off_t length)
+inode_create (disk_sector_t sector, off_t length, bool isdir)
 {
   struct inode_disk *disk_inode = NULL;
   bool success = false;
@@ -116,6 +121,8 @@ inode_create (disk_sector_t sector, off_t length)
     {
       disk_inode->length = (length > MAX_FILE_SIZE) ? MAX_FILE_SIZE : length;
       disk_inode->magic = INODE_MAGIC;
+      disk_inode->isdir = isdir;
+      disk_inode->parent_sector = ROOT_DIR_SECTOR;
       if (inode_allocate(disk_inode))
         {
           disk_write (filesys_disk, sector, disk_inode);
@@ -166,6 +173,9 @@ inode_open (disk_sector_t sector)
   inode->allocated = data.allocated;
   inode->inner_index = data.inner_index;
   inode->outer_index = data.outer_index;
+  inode->isdir = data.isdir;
+  inode->parent_sector = data.parent_sector;
+
   return inode;
 }
 
@@ -216,6 +226,8 @@ inode_close (struct inode *inode)
         data->allocated = inode->allocated;
         data->inner_index = inode->inner_index;
         data->outer_index = inode->outer_index;
+        data->isdir = inode->isdir;
+        data->parent_sector = inode->parent_sector;
 
         disk_write(filesys_disk, inode->sector, data);
 
@@ -349,7 +361,8 @@ inode_length (const struct inode *inode)
   return inode->length;
 }
 
-bool inode_allocate(struct inode_disk *disk_inode)
+bool
+inode_allocate(struct inode_disk *disk_inode)
 {
   struct inode *inode = malloc(sizeof(struct inode));
   inode->length = 0;
@@ -367,12 +380,16 @@ bool inode_allocate(struct inode_disk *disk_inode)
   return true;
 }
 
-void inode_deallocate(struct inode *inode)
+void
+inode_deallocate(struct inode *inode)
 {
   size_t num_sectors = bytes_to_sectors(inode_length(inode));
   struct indirect_block inner_block;
   struct indirect_block outer_block;
   int i, j;
+  if(num_sectors == 0)
+    return;
+  
   disk_read(filesys_disk, inode->start_block, &inner_block);
 
   for(i = 0; i < DISK_NUM_PTR; i++)
@@ -393,7 +410,8 @@ void inode_deallocate(struct inode *inode)
   free_map_release(inode->start_block, 1);
 }
 
-void inode_grow(struct inode *inode, off_t new_length)
+void
+inode_grow(struct inode *inode, off_t new_length)
 {
   struct indirect_block inner_block;
   struct indirect_block outer_block;
@@ -444,4 +462,33 @@ void inode_grow(struct inode *inode, off_t new_length)
       break;
   }
   disk_write(filesys_disk, inode->start_block, &inner_block);
+}
+
+
+/* bunch of helper functions since struct inode cannot be accessed outside inode.c */
+bool
+inode_isdir(struct inode *inode)
+{
+  return inode->isdir;
+}
+
+disk_sector_t
+inode_get_parent(struct inode *inode)
+{
+  return inode->parent_sector;
+}
+
+void
+inode_add_dir(disk_sector_t sector, disk_sector_t dir_sector)
+{
+  struct inode* inode = inode_open(sector);
+  inode->parent_sector = dir_sector;
+  inode_close(inode);
+  return;
+}
+
+int
+inode_get_open_cnt(struct inode *inode)
+{
+  return inode->open_cnt;
 }

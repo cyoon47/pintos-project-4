@@ -7,7 +7,7 @@
 #include "threads/thread.h"
 #include "devices/timer.h"
 
-#define WRITE_BACK_PERIOD TIMER_FREQ*3
+#define WRITE_BACK_PERIOD (TIMER_FREQ*3)
 
 thread_func thread_write_back;
 thread_func thread_read_ahead;

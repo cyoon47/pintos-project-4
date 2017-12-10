@@ -115,6 +115,7 @@ struct thread
     struct list mmap_list;
     int next_mapid;
 
+    struct dir *curr_dir;
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -141,6 +142,8 @@ struct file_map
 {
   int fd;
   struct file *file;
+  struct dir *dir;
+  bool isdir;
   struct list_elem elem;
 };
 

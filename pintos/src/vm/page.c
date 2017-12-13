@@ -178,16 +178,13 @@ bool load_file(struct s_page_entry *p_entry)
 	
 	if(p_entry->read_bytes > 0)
       {
-      	acquire_file_lock();
       	file_seek (p_entry->file, p_entry->ofs);
         /* Load this page. */
         if (file_read (p_entry->file, frame, p_entry->read_bytes) != (int) p_entry->read_bytes)
           {
             free_frame (frame);
-            release_file_lock();
             return false; 
           }
-        release_file_lock();
         memset (frame + p_entry->read_bytes, 0, p_entry->zero_bytes);
       }
 	

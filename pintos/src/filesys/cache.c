@@ -72,6 +72,7 @@ access_cache_block(disk_sector_t disk_sector, void *mem_loc, off_t ofs, size_t s
 		cb->dirty = true;
 		cb->num_access--;
 	}
+	
 }
 
 /* evict and load a new disk_sector to cache_block */
@@ -139,6 +140,7 @@ write_back(void)
 	}
 }
 
+/* write back thread that sleeps for WRITE_BACK_PERIOD after writing the cache to disk */
 void
 thread_write_back(void *aux UNUSED)
 {

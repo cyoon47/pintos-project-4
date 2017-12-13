@@ -41,7 +41,6 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
-struct lock file_lock;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -96,7 +95,6 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
-  lock_init (&file_lock);
   list_init (&ready_list);
 
   init_frame_table ();
@@ -507,10 +505,8 @@ thread_munmap(int mapping)
       {
         if(pagedir_is_dirty(t->pagedir, mp->p_entry->upage))
         {
-          acquire_file_lock();
           file_seek(mp->p_entry->file, mp->p_entry->ofs);
           file_write(mp->p_entry->file, (void *) pagedir_get_page(t->pagedir, mp->p_entry->upage), mp->p_entry->read_bytes);
-          release_file_lock();
         }
 
         free_frame((void *)pagedir_get_page(t->pagedir, mp->p_entry->upage));
@@ -526,9 +522,7 @@ thread_munmap(int mapping)
   }
   if(close_file != NULL)
   {
-    acquire_file_lock();
     file_close(close_file);
-    release_file_lock();
   }
 }
 
@@ -537,19 +531,6 @@ void
 update_ready_list(void)
 {
   list_sort(&ready_list, thread_compare_donated_priority, NULL);
-}
-
-/* Functions to acquire/release file_lock */
-void
-acquire_file_lock(void)
-{
-  lock_acquire(&file_lock);
-}
-
-void
-release_file_lock(void)
-{
-  lock_release(&file_lock);
 }
 
 /* get corresponding file_map from fd */
@@ -572,7 +553,7 @@ struct file *get_file(struct list *file_list, int fd)
 {
   struct file_map *temp_fmap = get_file_map(file_list, fd);
 
-  if(temp_fmap == NULL) {
+  if(temp_fmap == NULL || temp_fmap->isdir) {
     return NULL;
   }
   else

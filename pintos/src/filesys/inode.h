@@ -24,5 +24,7 @@ bool inode_isdir(struct inode *inode);
 disk_sector_t inode_get_parent(struct inode *inode);
 void inode_add_dir(disk_sector_t sector, disk_sector_t dir_sector);
 int inode_get_open_cnt(struct inode *inode);
+void acquire_inode_lock(struct inode *inode);
+void release_inode_lock(struct inode *inode);
 
 #endif /* filesys/inode.h */

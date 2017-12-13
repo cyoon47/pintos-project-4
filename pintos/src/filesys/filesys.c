@@ -14,7 +14,7 @@
 /* The disk that contains the file system. */
 struct disk *filesys_disk;
 char * get_name(const char * path);
-struct dir * get_parent_dir(char * path);
+struct dir * extract_parent_dir(char * path);
 static void do_format (void);
 
 /* Initializes the file system module.
@@ -53,7 +53,7 @@ bool
 filesys_create (const char *name, off_t initial_size, bool isdir) 
 {
   disk_sector_t inode_sector = 0;
-  struct dir *dir = get_parent_dir(name);
+  struct dir *dir = extract_parent_dir(name);
   char *f_name = get_name(name);
   bool success = (dir != NULL
                   && free_map_allocate (1, &inode_sector)
@@ -74,7 +74,7 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = get_parent_dir(name);
+  struct dir *dir = extract_parent_dir(name);
   char *f_name = get_name(name);
   struct inode *inode = NULL;
 
@@ -83,18 +83,18 @@ filesys_open (const char *name)
 
   if (dir != NULL)
   {
-    if(strcmp(f_name, "..") == 0)
+    if(strcmp(f_name, ".") == 0 || (is_root(dir) && strlen(f_name) == 0))
     {
-      if(!dir_get_parent(dir, &inode))
+      free(f_name);
+      return (struct file *) dir;
+    }
+    else if(strcmp(f_name, "..") == 0)
+    {
+      if(!get_parent_dir(dir, &inode))
       {
         free(f_name);
         return NULL;
       }
-    }
-    else if(strcmp(f_name, ".") == 0 || dir_is_root(dir) && strlen(f_name) == 0)
-    {
-      free(f_name);
-      return (struct file *) dir;
     }
     else
     {
@@ -125,7 +125,7 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name) 
 {
-  struct dir *dir = get_parent_dir(name);
+  struct dir *dir = extract_parent_dir(name);
   char *f_name = get_name(name);
   bool success = dir != NULL && dir_remove (dir, f_name);
   dir_close (dir); 
@@ -165,9 +165,9 @@ get_name(const char * path)
   return name;
 }
 
-/* get the directory of the file in the path */
+/* get the directory of the file in the path for easy path parsing */
 struct dir *
-get_parent_dir(char * path)
+extract_parent_dir(char * path)
 {
   char path_copy[strlen(path)+1];
   strlcpy(path_copy, path, strlen(path)+1);
@@ -175,11 +175,12 @@ get_parent_dir(char * path)
   char *curr, *next, *save_ptr;
   struct dir *curr_dir;
 
-  // if absolute path or curr_dir is not set yet
+  // if absolute path or curr_dir is not set yet (then curr_dir should be root)
   if(path_copy[0] == '/' || thread_current()->curr_dir == NULL)
   {
     curr_dir = dir_open_root();
   }
+
   // otherwise open the current directory
   else
   {
@@ -193,16 +194,24 @@ get_parent_dir(char * path)
   {
     next = strtok_r(NULL, "/", &save_ptr);
   }
+
+  /* loop until there is no more token afterwards */
   while(next != NULL)
   {
     // . will not change the directory, so skip.
-    if(strcmp(curr, ".") != 0)
+    if(strcmp(curr, ".") == 0)
+    {
+      curr = next;
+      next = strtok_r(NULL, "/", &save_ptr);
+      continue;
+    }
+    else
     {
       struct inode *inode;
       // .. -> get parent directory
       if(strcmp(curr, "..") == 0)
       {
-        if(!dir_get_parent(curr_dir, &inode))
+        if(!get_parent_dir(curr_dir, &inode))
           return NULL;
       }
       else

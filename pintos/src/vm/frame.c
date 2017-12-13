@@ -91,10 +91,8 @@ void * evict_frame(enum palloc_flags flags)
 	    	{
 	    		if(fe->loaded_page->type == TYPE_MMAP)
 	    		{
-	    			acquire_file_lock();
 	    			file_seek(p->file, p->ofs);
 	    			file_write(p->file, fe->frame, p->read_bytes);
-	    			release_file_lock();
 	    		}
 	    		else
 	    		{

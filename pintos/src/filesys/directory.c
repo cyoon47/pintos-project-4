@@ -126,10 +126,12 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  acquire_inode_lock(dir_get_inode(dir));
   if (lookup (dir, name, &e, NULL))
     *inode = inode_open (e.inode_sector);
   else
     *inode = NULL;
+  release_inode_lock(dir_get_inode(dir));
 
   return *inode != NULL;
 }
@@ -150,9 +152,13 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  acquire_inode_lock(dir_get_inode(dir));
   /* Check NAME for validity. */
   if (*name == '\0' || strlen (name) > NAME_MAX)
+  {
+    release_inode_lock(dir_get_inode(dir));
     return false;
+  }
 
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
@@ -179,6 +185,7 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
  done:
+  release_inode_lock(dir_get_inode(dir));
   return success;
 }
 
@@ -196,6 +203,7 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  acquire_inode_lock(dir_get_inode(dir));
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
     goto done;
@@ -205,7 +213,7 @@ dir_remove (struct dir *dir, const char *name)
   if (inode == NULL)
     goto done;
 
-  /* directory is open */
+  /* directory is open. if no process is using the directory, open_cnt should be 1, as we just opened the inode */
   if(inode_isdir(inode) && inode_get_open_cnt(inode) > 1)
     goto done;
 
@@ -224,6 +232,7 @@ dir_remove (struct dir *dir, const char *name)
 
  done:
   inode_close (inode);
+  release_inode_lock(dir_get_inode(dir));
   return success;
 }
 
@@ -234,6 +243,7 @@ bool
 dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
+  acquire_inode_lock(dir_get_inode(dir));
 
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
@@ -241,9 +251,11 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
       if (e.in_use)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
+          release_inode_lock(dir_get_inode(dir));
           return true;
         } 
     }
+  release_inode_lock(dir_get_inode(dir));
   return false;
 }
 
@@ -264,9 +276,9 @@ dir_empty(struct inode *inode)
   return true;
 }
 
-/* bunch of helper functions since struct dir cannot be accessed outside directory.c */
+/* helper functions */
 bool
-dir_get_parent(struct dir *dir, struct inode **inode)
+get_parent_dir(struct dir *dir, struct inode **inode)
 {
   *inode = inode_open(inode_get_parent(dir_get_inode(dir)));
   if(inode == NULL)
@@ -275,7 +287,7 @@ dir_get_parent(struct dir *dir, struct inode **inode)
 }
 
 bool
-dir_is_root(struct dir *dir)
+is_root(struct dir *dir)
 {
   return inode_get_inumber(dir_get_inode(dir)) == ROOT_DIR_SECTOR;
 }

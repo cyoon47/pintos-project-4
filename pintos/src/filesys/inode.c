@@ -8,6 +8,7 @@
 #include "threads/malloc.h"
 #include "filesys/cache.h"
 #include "filesys/file.h"
+#include "threads/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
@@ -59,23 +60,25 @@ struct inode
     unsigned outer_index;
     unsigned isdir;
     disk_sector_t parent_sector;
+    struct lock lock;
+    off_t visible_length;
   };
 
 bool inode_allocate(struct inode_disk *);
 void inode_deallocate(struct inode *);
-void inode_grow(struct inode *, off_t);
+bool inode_grow(struct inode *, off_t);
 
 /* Returns the disk sector that contains byte offset POS within
    INODE.
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
 static disk_sector_t
-byte_to_sector (const struct inode *inode, off_t pos) 
+byte_to_sector (const struct inode *inode, off_t pos/*, off_t max_length*/) 
 {
   int index;
   disk_sector_t indirect_block[DISK_NUM_PTR];
   ASSERT (inode != NULL);
-  if (pos < inode->length)
+  if (pos < inode_length(inode))
   {
     
     disk_read(filesys_disk, inode->start_block, &indirect_block);
@@ -169,12 +172,14 @@ inode_open (disk_sector_t sector)
   struct inode_disk data;
   disk_read (filesys_disk, inode->sector, &data);
   inode->length = data.length;
+  inode->visible_length = data.length;
   inode->start_block = data.start_block;
   inode->allocated = data.allocated;
   inode->inner_index = data.inner_index;
   inode->outer_index = data.outer_index;
   inode->isdir = data.isdir;
   inode->parent_sector = data.parent_sector;
+  lock_init(&inode->lock);
 
   return inode;
 }
@@ -255,7 +260,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
-  if(offset >= inode_length(inode))
+  off_t max_length = inode->visible_length;
+
+  if(offset >= max_length)
     return bytes_read;
 
   while (size > 0) 
@@ -265,7 +272,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       int sector_ofs = offset % DISK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
-      off_t inode_left = inode_length (inode) - offset;
+      off_t inode_left = max_length - offset;
       int sector_left = DISK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -302,7 +309,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if(offset + size > inode_length(inode))
   {
-    inode_grow(inode, offset + size);
+    if(!inode_grow(inode, offset + size))
+      return 0;
     inode->length = offset + size;
 
   }
@@ -331,6 +339,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
 
+  inode->visible_length = inode_length(inode);
   return bytes_written;
 }
 
@@ -410,7 +419,8 @@ inode_deallocate(struct inode *inode)
   free_map_release(inode->start_block, 1);
 }
 
-void
+/* grows the inode, and returns whether the growth succeeded */
+bool
 inode_grow(struct inode *inode, off_t new_length)
 {
   struct indirect_block inner_block;
@@ -418,11 +428,12 @@ inode_grow(struct inode *inode, off_t new_length)
   static char zeros[DISK_SECTOR_SIZE];
   size_t add_sectors = bytes_to_sectors(new_length) - bytes_to_sectors(inode_length(inode));
   if(add_sectors == 0)
-    return;
+    return true;
 
   if(!inode->allocated)
   {
-    free_map_allocate(1, &inode->start_block);
+    if(!free_map_allocate(1, &inode->start_block))
+      return false;
     inode->allocated++;
   }
   else
@@ -434,7 +445,8 @@ inode_grow(struct inode *inode, off_t new_length)
   {
     if(inode->outer_index == 0)
     {
-      free_map_allocate(1, &inner_block.disk_ptr[inode->inner_index]);
+      if(!free_map_allocate(1, &inner_block.disk_ptr[inode->inner_index]))
+        return false;
     }
     else
     {
@@ -443,7 +455,8 @@ inode_grow(struct inode *inode, off_t new_length)
 
     while(inode->outer_index < DISK_NUM_PTR)
     {
-      free_map_allocate(1, &outer_block.disk_ptr[inode->outer_index]);
+      if(!free_map_allocate(1, &outer_block.disk_ptr[inode->outer_index]))
+        return false;      
       disk_write(filesys_disk, outer_block.disk_ptr[inode->outer_index], zeros);
       inode->outer_index++;
       add_sectors--;
@@ -462,6 +475,8 @@ inode_grow(struct inode *inode, off_t new_length)
       break;
   }
   disk_write(filesys_disk, inode->start_block, &inner_block);
+
+  return true;
 }
 
 
@@ -491,4 +506,14 @@ int
 inode_get_open_cnt(struct inode *inode)
 {
   return inode->open_cnt;
+}
+
+void acquire_inode_lock(struct inode *inode)
+{
+  lock_acquire(&inode->lock);
+}
+
+void release_inode_lock(struct inode *inode)
+{
+  lock_release(&inode->lock);
 }

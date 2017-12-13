@@ -163,9 +163,7 @@ syscall_handler (struct intr_frame *f)
         char *file_create = *(char **) (esp + 4);
         unsigned initial_size = *(unsigned *) (esp + 8);
 
-        acquire_file_lock();
         bool created = filesys_create(file_create, initial_size, false);
-        release_file_lock();
 
         f->eax = created;
 
@@ -179,9 +177,7 @@ syscall_handler (struct intr_frame *f)
         }
         char *file_remove = *(char **) (esp + 4);
 
-        acquire_file_lock();
         bool removed = filesys_remove(file_remove);
-        release_file_lock();
 
         f->eax = removed;
 
@@ -194,9 +190,7 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         char *file_name = *(char **) (esp + 4);
-        acquire_file_lock();
         struct file *file_ptr = filesys_open(file_name);
-        release_file_lock();
 
         if(file_ptr == NULL)
           f->eax = -1;
@@ -237,9 +231,7 @@ syscall_handler (struct intr_frame *f)
           f->eax = -1;
           return;
         }
-        acquire_file_lock();
         f->eax = file_length(fs_file);
-        release_file_lock();
 
         break;
 
@@ -278,9 +270,7 @@ syscall_handler (struct intr_frame *f)
           }
           else
           {
-            acquire_file_lock();
             f->eax = file_read(read_file, read_buffer, read_size);
-            release_file_lock();
           } 
         }
 
@@ -318,9 +308,7 @@ syscall_handler (struct intr_frame *f)
           }
           else
           {
-            acquire_file_lock();
             f->eax = file_write(write_file, write_buffer, write_size);
-            release_file_lock();
           } 
         }
         break;
@@ -341,9 +329,7 @@ syscall_handler (struct intr_frame *f)
         }
         else
         {
-          acquire_file_lock();
           file_seek(seek_file, pos);
-          release_file_lock();
         }
 
         break;
@@ -364,9 +350,7 @@ syscall_handler (struct intr_frame *f)
         }
         else
         {
-          acquire_file_lock();
           f->eax = file_tell(tell_file);
-          release_file_lock();
         }
         break;
 
@@ -385,7 +369,6 @@ syscall_handler (struct intr_frame *f)
         }
         else
         {
-          acquire_file_lock();
           if(close_file_map->isdir)
           {
             dir_close(close_file_map->dir);
@@ -394,7 +377,6 @@ syscall_handler (struct intr_frame *f)
           {
             file_close(close_file_map->file);
           }
-          release_file_lock();
           list_remove(&close_file_map->elem);
           free(close_file_map);
         }
@@ -420,9 +402,7 @@ syscall_handler (struct intr_frame *f)
           return;
         }
 
-        acquire_file_lock();
         uint32_t read_bytes = file_length(file);
-        release_file_lock();
 
         off_t ofs = 0;
         while(read_bytes > 0)
@@ -477,30 +457,27 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         char *chdir_name = *(char **) (esp + 4);
-        acquire_file_lock();
-        struct dir *dir = get_parent_dir(chdir_name);
+        struct dir *dir = extract_parent_dir(chdir_name);
         char * chdir_file_name = get_name(chdir_name);
         struct inode *inode = NULL;
 
         if(dir != NULL)
         {
-          if(strcmp(chdir_file_name, "..") == 0)
-          {
-            if(!dir_get_parent(dir, &inode))
-            {
-              free(chdir_file_name);
-              f->eax = false;
-              release_file_lock();
-              return;
-            }
-          }
-          else if(strcmp(chdir_file_name, ".") == 0 || dir_is_root(dir) && strlen(chdir_file_name) == 0)
+          if(strcmp(chdir_file_name, ".") == 0 || is_root(dir) && strlen(chdir_file_name) == 0)
           {
             free(chdir_file_name);
             thread_current()->curr_dir = dir;
             f->eax = true;
-            release_file_lock();
             return;
+          }
+          else if(strcmp(chdir_file_name, "..") == 0)
+          {
+            if(!get_parent_dir(dir, &inode))
+            {
+              free(chdir_file_name);
+              f->eax = false;
+              return;
+            }
           }
           else
           {
@@ -512,7 +489,6 @@ syscall_handler (struct intr_frame *f)
         {
           free(chdir_file_name);
           f->eax = false;
-          release_file_lock();
           return;
         }
 
@@ -522,14 +498,12 @@ syscall_handler (struct intr_frame *f)
           thread_current()->curr_dir = dir;
           free(chdir_file_name);
           f->eax = true;
-          release_file_lock();
           return;
         }
         else
         {
           free(chdir_file_name);
           f->eax = false;
-          release_file_lock();
           return;
         }
 
@@ -542,9 +516,7 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         char *mkdir_name = *(char **) (esp + 4);
-        acquire_file_lock();
         f->eax = filesys_create(mkdir_name, 0, true);
-        release_file_lock();
 
         break;
 
@@ -563,17 +535,14 @@ syscall_handler (struct intr_frame *f)
           thread_exit(-1);
           return;
         }
-        acquire_file_lock();
         struct file_map *readdir_map = get_file_map(&thread_current()->file_list, readdir_fd);
         if(readdir_map == NULL || !readdir_map->isdir)
         {
-          release_file_lock();
           thread_exit(-1);
           return;
         }
 
         f->eax = dir_readdir(readdir_map->dir, readdir_name);
-        release_file_lock();
 
         break;
 
@@ -584,16 +553,13 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         int isdir_fd = *(int *)(esp + 4);
-        acquire_file_lock();
         struct file_map *isdir_map = get_file_map(&thread_current()->file_list, isdir_fd);
         if(isdir_map == NULL)
         {
-          release_file_lock();
           thread_exit(-1);
           return;
         }
         f->eax = isdir_map->isdir;
-        release_file_lock();
         break;
 
       case SYS_INUMBER:
@@ -603,11 +569,9 @@ syscall_handler (struct intr_frame *f)
           return;
         }
         int inum_fd = *(int *)(esp + 4);
-        acquire_file_lock();
         struct file_map *inum_map = get_file_map(&thread_current()->file_list, inum_fd);
         if(inum_map == NULL)
         {
-          release_file_lock();
           thread_exit(-1);
         }
         if(inum_map->isdir)
@@ -618,7 +582,6 @@ syscall_handler (struct intr_frame *f)
         {
           f->eax = inode_get_inumber(file_get_inode(inum_map->file));
         }
-        release_file_lock();
 
         break;
 

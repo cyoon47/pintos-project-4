@@ -205,10 +205,8 @@ process_exit (int status)
   
   ch->exit_status = status;
   ch->exit = true;
-  acquire_file_lock();
   file_close(curr->own_file); // close its file to allow write
   close_files(&curr->file_list);
-  release_file_lock();
 
   if(thread_current()->curr_dir != NULL)
     dir_close(thread_current()->curr_dir);
@@ -364,9 +362,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   process_activate ();
 
-  // acquire access to filesys
-  acquire_file_lock();
-
   /* Open executable file. */
   file = filesys_open (argv[0]);
   if (file == NULL) 
@@ -464,8 +459,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   if(!success)
     file_close (file);
-  
-  release_file_lock();
   return success;
 }
 

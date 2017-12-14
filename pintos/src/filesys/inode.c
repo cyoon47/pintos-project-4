@@ -307,6 +307,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
+  /* make sure to avoid racing to extend the file */
+  if(!inode_isdir(inode))
+    acquire_inode_lock(inode);
+
   if(offset + size > inode_length(inode))
   {
     if(!inode_grow(inode, offset + size))
@@ -314,6 +318,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     inode->length = offset + size;
 
   }
+
+  if(!inode_isdir(inode))
+    release_inode_lock(inode);
 
   while (size > 0) 
     {
@@ -337,9 +344,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
+      
+      if(inode->visible_length + chunk_size <= inode_length(inode))
+        inode->visible_length += chunk_size;  
+      else
+        inode->visible_length = inode_length(inode);
     }
-
-  inode->visible_length = inode_length(inode);
+    
   return bytes_written;
 }
 

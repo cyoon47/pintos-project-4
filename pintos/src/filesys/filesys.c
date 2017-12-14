@@ -220,7 +220,6 @@ extract_parent_dir(char * path)
           return NULL;
       }
 
-      // ignore inode that is not directory
       if(!inode_isdir(inode))
         inode_close(inode);
       else

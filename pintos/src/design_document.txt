@@ -1,29 +1,31 @@
-﻿			+---------------------------+
-			|	    CS 330	    |
-			| PROJECT 3: VIRTUAL MEMORY |
-			|       DESIGN DOCUMENT	    |
-			+---------------------------+
+﻿       	     	     +-------------------------+
+		     |	 2017  fall  CS 330    |
+		     | PROJECT 4: FILE SYSTEMS |
+		     |	   DESIGN DOCUMENT     |
+		     +-------------------------+
 
 ---- GROUP ----
 
 >> Fill in the names and email addresses of your group members.
+>> You can write this document in Korean! (We recommend!)
 
 Mingi Shin <yuagnun@gmail.com>
 Chang Yoon Lee <cyoon47@kaist.ac.kr>
+
 
 ---- PRELIMINARIES ----
 
 >> If you have any preliminary comments on your submission, notes for the
 >> TAs, or extra credit, please give them here.
 
-Team 1, project 3, 4 tokens
+Team 1, project 4, 5 tokens
 
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
 
-			PAGE TABLE MANAGEMENT
-			=====================
+		     INDEXED AND EXTENSIBLE FILES
+		     ============================
 
 ---- DATA STRUCTURES ----
 
@@ -31,155 +33,102 @@ Team 1, project 3, 4 tokens
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-From /threads/thread.h
+From filesys/inode.c
 
-struct thread
+struct inode_disk
+  {
+    off_t length;                       
+    unsigned magic;                     
+    disk_sector_t start_block;
+    unsigned allocated;
+    unsigned inner_index;
+    unsigned outer_index;
+    unsigned isdir;
+    disk_sector_t parent_sector;
+    uint32_t unused[120];               
+  };
+disk_sector_t start_block: the sector number for the initial block in the doubly indirect inode.
+
+unsigned allocated: variable to indicate whether the initial block is allocated. We used unsigned as it is 4 bytes long, and it is easier to keep 512 bytes constraint.
+
+unsigned inner_index: the current index to the first layer of indirect blocks.
+
+unsigned outer_index: the next index to the second layer of indirect blocks.
+
+struct indirect_block
 {
-  ...
-  /* Supplemental Page Table */
-  struct hash s_page_table;
-  void *esp;
-
-  struct list mmap_list;
-  int next_mapid;
+  disk_sector_t disk_ptr[DISK_NUM_PTR];
 };
 
-struct hash s_page_table
-: supplemental page table which holds additional information of pages for loading.
-We used a provided hash data structure.
+struct indirect_block contains 128 disk_sector_t for each indirect access to another block.
+disk_ptr contains the sector numbers for each block.
+
+struct inode 
+  {
+    struct list_elem elem;              
+    disk_sector_t sector;               
+    int open_cnt;                       
+    bool removed;                       
+    int deny_write_cnt;                 
+    off_t length;
+    disk_sector_t start_block;
+    unsigned allocated;
+    unsigned inner_index;
+    unsigned outer_index;
+    unsigned isdir;
+    disk_sector_t parent_sector;
+    struct lock lock;
+    off_t visible_length;
+  };
+
+disk_sector_t start_block, unsigned allocated, unsigned inner_index, and unsigned outer_index all have the same meaning as variables of the same names in struct inode_disk.
+off_t visible_length represents the length of the file that a reader can access, for controlling race condition during file extension.
 
 
+>> A2: What is the maximum size of a file supported by your inode
+>> structure?  Show your work.
 
-From /vm/frame.h
-
-struct list frame_table;
-: list of frames.
-
-struct lock frame_lock;
-: mutual exclusive lock to avoid racing condition when referring and manipulating
-the frame table.
-
-struct frame_entry{
-  void *frame;
-  struct list_elem elem;
-  struct thread *owner_thread;
-  struct s_page_entry *loaded_page;
-};
-
-void *frame;
-: the physical address of the frame.
-
-struct list_elem elem;
-: list_elem to insert the frame_entry into frame_table.
-
-struct thread *owner_thread;
-: the thread that owns the page loaded in the frame.
-
-struct s_page_entry *loaded_page;
-: the corresponding s_page_entry of the page loaded in the frame.
-
-From /vm/page.h
-
-enum page_type
-{
-  TYPE_FILE,
-  TYPE_SWAP,
-  TYPE_STACK,
-  TYPE_MMAP
-};
-
-enum page_type allows distinction between different types of pages.
-
-struct s_page_entry{
-  enum page_type type; 	// type of page
-  bool loaded;		// whether the page is loaded in physical memory
-  struct file *file;
-
-  int32_t ofs;
-  void *upage;
-  uint32_t read_bytes;
-  uint32_t zero_bytes;
-  bool writable;
-  bool allow_swap;
-
-  disk_sector_t swap_sec_no;
-
-  struct hash_elem elem;
-};
-
-enum page_type type;
-: the type of the page defined in enum page_type.
-
-bool loaded;
-: indicates whether the page is loaded in physical memory.
-
-struct file *file;
-: the file that the page should be loaded from for initial executable loading and mmap pages.
-
-int32_t ofs;
-: offset in the file that the page should be loaded from.
-
-void *upage;
-: the user virtual address for the page.
-
-uint32_t read_bytes;
-: the number bytes to be read from the file.
-
-uint32_t zero_bytes;
-: the number of zero bytes to be appended at the end of the page.
-
-
----- ALGORITHMS ----
-
->> A2: In a few paragraphs, describe your code for locating the frame,
->> if any, that contains the data of a given page.
-
-Given a page, we can look up the supplemental page entry using the page_lookup() function, which rounds down the given user virtual address to a multiple of PGSIZE, and finds the s_page_entry in the supplemental page table hash. 
-
-Once we found the s_page_entry, we can check the boolean loaded to check if the page is loaded in physical memory. 
-If loaded is false, there is no frame that contains the data of the page. 
-If loaded is true, we can retrieve the frame using the pagedir_get_page() function using the thread’s page directory and the page’s user virtual address as the arguments.
-
-
->> A3: How does your code coordinate accessed and dirty bits between
->> kernel and user virtual addresses that alias a single frame, or
->> alternatively how do you avoid the issue?
-
-Firstly, there should be no case of two or more pages pointing to the same frame, since we did not implement sharing of frames. If two pages refer to the same part of a file, then there will be two separate frames loaded.
-
-The second case is about aliasing between the user virtual page and kernel virtual page. In our code, all accesses to the user data is done through the user virtual address. Even in kernel, during system calls or exceptions, the kernel uses the user virtual address to locate the supplemental pages to load the required data. Therefore, kernel virtual addresses are never used to access user data, and the aliasing issue should be solved.
+Our inode structure has one doubly indirect block. Since the disk sector size is 512 bytes, and each disk_sector_t is 4 bytes, one indirect block can store 512/4 = 128 disk_sector_t to another block. Therefore, the maximum size of a file is 128*128*512 = 8338608 bytes = 8 MB. Since we need to implement a file up to size of 8MB - metadata, one doubly indirect block should suffice.
 
 ---- SYNCHRONIZATION ----
 
->> A4: When two user processes both need a new frame at the same time,
->> how are races avoided?
+>> A3: Explain how your code avoids a race if two processes attempt to
+>> extend a file at the same time.
 
-We made use of frame_lock to control access to the frame table.
+In our code, in inode_write_at(), a process needs to acquire the lock to the file’s inode before it attempts to extend the file. Since the lock is released only when the process finishes extending the file, any other process cannot try to extend the file before one finishes. This solves the race condition when two or more processes attempt to extend a file, by ensuring exclusion in extending a file.
 
-Firstly, the two processes will call palloc_get_page() to be allocated a physical address. This function avoids race by using pool lock to control access to the bitmap containing the physical addresses.
+>> A4: Suppose processes A and B both have file F open, both
+>> positioned at end-of-file.  If A reads and B writes F at the same
+>> time, A may read all, part, or none of what B writes.  However, A
+>> may not read data other than what B writes, e.g. if B writes
+>> nonzero data, A is not allowed to see all zeros.  Explain how your
+>> code avoids this race.
 
-If palloc_get_page() is successful, the process will call add_frame() to add the allocated frame to the frame table, and if palloc_get_page() is unsuccessful, the process will call evict_frame to evict a frame from the frame table and add call add_frame() afterwards.
+This is solved using two ‘lengths’ in the inode, which are off_t length, and off_t visible_length. visible_length represents the length of the file that is ‘visible’ to a reading process, which is incremented by chunk_size only when data of size chunk_size is actually written to the file. This way, only the data written by B is visible to A, and A cannot see any zeros that B did not write, preventing any race condition while extending the file.
 
-No matter which function each process calls, the two functions control access to the frame table using the frame_lock, so no two processes can access the frame table at the same time. Thus, race conditions are avoided by ensuring mutual exclusion when modifying the frame table.
+>> A5: Explain how your synchronization design provides "fairness".
+>> File access is "fair" if readers cannot indefinitely block writers
+>> or vice versa.  That is, many processes reading from a file cannot
+>> prevent forever another process from writing the file, and many
+>> processes writing to a file cannot prevent another process forever
+>> from reading the file.
 
+In our synchronization design, no lock that allows readers to block writers nor a lock that allows writers to block readers is used. There is no way for writers and readers to prevent each other from accessing the file they are using.
+Since there is no way of interacting with other processes using the file, the file data might be interleaved, or only a part of written data might be seen by the reader. However, this is allowed as mentioned in the pintos document, therefore there is no problem caused by making all accesses to files independent.
+The only interaction between reader and writer occurs when reader tries to read past EOF while writer is extending the file, but even in this case, the writer allows reader to read any written data as soon as they are available for the reader, minimizing the ‘blocking’ time.
 
 ---- RATIONALE ----
 
->> A5: Why did you choose the data structure(s) that you did for
->> representing virtual-to-physical mappings?
+>> A6: Is your inode structure a multilevel index?  If so, why did you
+>> choose this particular combination of direct, indirect, and doubly
+>> indirect blocks?  If not, why did you choose an alternative inode
+>> structure, and what advantages and disadvantages does your
+>> structure have, compared to a multilevel index?
 
-We used hash for storing the user pages in each process. This choice was made because the user addresses are expected to be sparse, thus using array would take up too much memory to be efficient. Using hash was a reasonable choice that uses little memory and takes short time to look up the pages.
-Frames were stored in a list, as it is simple to implement, and also does not take up too much memory. 
+Yes. We used a single doubly indirect indexing. The requirement on the size of a file was 8MB, which is completely covered by a single doubly indirect block, so there was no need to use any direct blocks or indirect blocks. We did not use any other types of blocks since it meant introducing more complex inode structure, which will be more difficult to debug and manage. Using only one type of indirect block very much simplified the design and increased understandability of our code.
 
-To implement virtual-to-physical mappings, we included all information needed to load a page from the file in supplemental page entry, s_page_entry. This allows us to locate and load the data into the physical memory, as this project implements lazy loading and memory mapping. We also included bool loaded and allow_swap in s_page_entry. The boolean loaded allows us to easily check if the page is loaded in the physical memory for easy deallocation when the process exits. Allow_swap is used to prevent swapping out of the frame when the kernel is working on the frame, such as when writing the contents of the frame to file, or loading the data to the frame.
-
-In frame_entry, we included the owner_thread and loaded_page. Owner thread allows us to locate the process that has its page loaded in the frame, which is used to access the page directory and clear the page when a frame is evicted from the physical memory. loaded_page is used to set the boolean loaded and to check if allow_swap is true during eviction.
-
-Using these data structures, full information synchronization between the virtual and physical memory should be possible.
-
-
-		       PAGING TO AND FROM DISK
-		       =======================
+			    SUBDIRECTORIES
+			    ==============
 
 ---- DATA STRUCTURES ----
 
@@ -187,144 +136,123 @@ Using these data structures, full information synchronization between the virtua
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-From /threads/thread.h
+From filesys/inode.c
+
+struct inode_disk
+  {
+    off_t length;                       
+    unsigned magic;                     
+    disk_sector_t start_block;
+    unsigned allocated;
+    unsigned inner_index;
+    unsigned outer_index;
+    unsigned isdir;
+    disk_sector_t parent_sector;
+    uint32_t unused[120];               
+  };
+
+unsigned isdir: a variable that indicates whether the inode represents a directory.
+
+disk_sector_t parent_sector: the sector number containing the inode’s parent directory.
+
+struct inode 
+  {
+    struct list_elem elem;              
+    disk_sector_t sector;               
+    int open_cnt;                       
+    bool removed;                       
+    int deny_write_cnt;                 
+    off_t length;
+    disk_sector_t start_block;
+    unsigned allocated;
+    unsigned inner_index;
+    unsigned outer_index;
+    unsigned isdir;
+    disk_sector_t parent_sector;
+    struct lock lock;
+    off_t visible_length;
+  };
+
+unsigned isdir and disk_sector_t parent_sector have the same meaning as the variables in struct inode_disk.
+
+From threads/thread.h:
 
 struct thread
-{
-  ...
-  /* Supplemental Page Table */
-  struct hash s_page_table;
-  void *esp;
+  {
+    /* Owned by thread.c. */
+    tid_t tid;                          
+    ...
 
-  struct list mmap_list;
-  int next_mapid;
+    struct dir *curr_dir;
+
+    ...
+    unsigned magic;                     
+  };
+
+struct dir *curr_dir: the current directory that the process is in.
+
+struct file_map
+{
+  int fd;
+  struct file *file;
+  struct dir *dir;
+  bool isdir;
+  struct list_elem elem;
 };
 
-void *esp
-: esp is saved to struct thread when exception occurs, to allow the kernel to access the stack pointer when exception occurs in kernel.
+struct dir *dir: the pointer to the corresponding struct dir when the open file represents a directory.
 
-From /vm/swap.h
-
-struct lock swap_lock;
-: it is used to ensure mutual exclusion when accessing the swap table.
-
-struct disk *swap_disk;
-: the swap disk, at hd1:1.
-
-struct bitmap *swap_table;
-: a bitmap to keep track of loaded pages in swap disk.
-
+bool isdir: a variable to indicate whether the file_map represents a directory.
 
 
 
 ---- ALGORITHMS ----
 
->> B2: When a frame is required but none is free, some frame must be
->> evicted.  Describe your code for choosing a frame to evict.
+>> B2: Describe your code for traversing a user-specified path.  How
+>> do traversals of absolute and relative paths differ?
 
-We chose second-chance algorithm for choosing a frame to evict.
-Choosing that, we could utilize provided accessed bit and associated
-features, and easily implement fast and efficient algorithm.
+The user-specified path is tokenized using ‘/’ that separates the path. The traversals of absolute and relative paths differ only at the start. When the path starts with ‘/’, then it must be an absolute path, so we set the starting directory as root. Otherwise, the path must be relative, and we set the starting directory as the process’s current directory.
 
-If there is no free frame, palloc_get_page() fails and evict_frame()
-is called.
-evict_frame() iterates on all swappable frame entries of frame_table,
-checking if the accessed bit of the frame is 1 using pagedir_is_accessed().
-If the frame is accessed, set its accessed bit to 0 and move on to the
-next frame.
-If the frame is not accessed, that frame is chosen to be evicted.
-Before evicting, check if frame needs to be swapped out or written to
-the file system. If dirty bit of the frame is set to 1 or the frame is
-one has been swapped in, we use swap_out() in swap.c to swap out the
-frame. (After memory mapped file is implemented, if the frame contains
-memory-mapped file, it will be written to the corresponding file.)
-After that, the boolean loaded of the supplemental page to false, and
-the entry is removed from the frame table. Page is removed from the
-pagedir of owner thread, memory frame is freed, and free the memory
-containing struct frame_entry.
-Finally, attempt to get page using palloc_get_page() and return the
-obtained page address.
-We made this process repeats if final palloc_get_page() gives NULL,
-to assure the thread occurred page_fault can obtain the page and
-keep running on our OS properly.
+After that, we go through each token to traverse the path. If ‘.’ is found, it represents the current directory so nothing is done. If ‘..’ is found, we change the directory to be the parent directory of the current directory. For all other cases, we look up the current directory for the name specified by the token. If the name does not exist in the current directory, then the path is invalid. This step is repeated until we get to the end of the given path.
 
->> B3: When a process P obtains a frame that was previously used by a
->> process Q, how do you adjust the page table (and any other data
->> structures) to reflect the frame Q no longer has?
+>> B3: Look over "pwd.c" in src/examples.  Briefly explain how it
+>> determines the present working directory.
 
-First, in evict_frame, we check whether the page held by Q has been modified, by calling pagedir_is_dirty(). If it has been modified, we store the change by writing to the relevant file if the page was a mmap page, or writing to the swap disk if the page type is something else. This ensures that the change is kept when the page is loaded back in later by Q.
+First, it opens the current directory it is in and stores the inumber of the current directory using get_inumber() to child_inum. Then, set char *namep to the beginning of char name[].
 
-Then, we set boolean loaded in the s_page_entry to false, indicating that the page is no longer loaded. We remove the frame entry that held Q’s page from the frame table, and clears the corresponding page directory for Q using pagedir_clear_page() to ensure that later accesses to the page page faults. We also deallocate the physical address by calling palloc_free_page(). Finally, the previously malloced frame entry is freed.
+Then, in an infinite loop, we append “..” at location of *namep. For the first loop, name[] will be “..”. Then, we use open system call to open path in name, which will be the parent directory of the current directory, and append ‘/’ at *namep, and now name[] is “../”. The result of open system call is stored in parent_fd. The inumber of opened parent_fd is stored in parent_inum.
 
-After we ensure that Q cannot access the frame by deallocating the user virtual address and physical address, we allocate a new frame to P, initializing and allocating all the necessary data for the frame.
+In another infinite loop, we call readdir(parent_fd, namep), which will store the name of entries at *namep, and name[] will be “../[name_of_entry]”. We call get_inumber(name, &test_inum), which will get the inumber of the path stored in name. We go through the loop until test_inum == child_inum, which means that name[] is now “../[name_of_current_directory]”. Then, we prepend the name of current directory to cwd. Finally, child_inum is set to parent_inum, traversing upwards in the directory tree.
 
+In the outer loop, name will be set to “../../.. …”, traversing up the directory tree, and getting the parent_inum. In the inner loop, the name of the child_inum will be found, and then exit the loop. Finally the name of the child directory will be prepended to cwd.
 
->> B4: Explain your heuristic for deciding whether a page fault for an
->> invalid virtual address should cause the stack to be extended into
->> the page that faulted.
-
-We check if the faulting address is within 32 bytes below the stack pointer. If it is within 32 bytes, we assume that it is a stack access and grow the stack, if the stack size does not exceed STACK_LIMIT, which is 8MB. This heuristic was chosen because PUSHA instruction accesses 32 bytes below the stack pointer, which should be a valid stack access. Since stack accesses then to be sequential, accesses below 32 bytes of esp were considered to be invalid memory accesses.
-
+This continues until parent_inum == child_inum, which means that the parent directory is equal to child directory, which should only happen when we reached the root. When this happens, cwd should contain the full name of present working directory. The string in cwd is moved forward, and ‘/’ is added to the front of the string to give the complete absolute path of the present directory.
 
 ---- SYNCHRONIZATION ----
 
->> B5: Explain the basics of your VM synchronization design.  In
->> particular, explain how it prevents deadlock.  (Refer to the
->> textbook for an explanation of the necessary conditions for
->> deadlock.)
+>> B4: How do you prevent races on directory entries?  For example,
+>> only one of two simultaneous attempts to remove a single file
+>> should succeed, as should only one of two simultaneous attempts to
+>> create a file with the same name, and so on.
 
-We used two additional locks for this project, namely frame_lock and swap_lock, that controls access to system-wide frame table and swap table/disk.
+This is prevented by using the inode_lock for the directory. In dir_lookup, dir_add, dir_remove and dir_readdir, which are all the cases when the system needs to look at the directory’s entries or change them, before any of the work is done, the process needs to acquire the lock to the directory’s inode. This means that only one process can access the directory’s entry information, and only one of the same attempts to remove or create a file should succeed, whichever does it first.
 
-The basic principle is that whenever processes attempt to modify the system-wide data structures, for example the frame table, we made sure that the process acquires the corresponding lock before changes are made to the shared resources. This way, synchronization among the processes while accessing the frames and swap space can be ensured.
+>> B5: Does your implementation allow a directory to be removed if it
+>> is open by a process or if it is in use as a process's current
+>> working directory?  If so, what happens to that process's future
+>> file system operations?  If not, how do you prevent it?
 
-To avoid deadlocks, we made sure that processes only acquire locks when they need them, and also no interleaving acquiring of two different locks are possible. For example, whenever possible, we did not put any lock_acquire within another lock_acquire, which can cause deadlocks. The only case when a process can acquire both the frame_lock and swap_lock is within evict_frame() in frame.c, where it acquires the frame_lock and then acquires swap_lock when call to swap_out() is made. However, no deadlock is possible, since the swap_lock is accessed only via calls to swap_in() and swap_out(). For deadlock to occur, there must be an attempt to acquire frame_lock in either swap_in() or swap_out(), but this never happens.
-
-Also, when accessing the file system, we used file_lock. However, we ensured that file_lock is acquired just before the file system access and released right after access is finished, so deadlocks will not occur.
-
->> B6: A page fault in process P can cause another process Q's frame
->> to be evicted.  How do you ensure that Q cannot access or modify
->> the page during the eviction process?  How do you avoid a race
->> between P evicting Q's frame and Q faulting the page back in?
-
-Upon selecting Q’s frame to be evicted, pagedir_clear_page() is called on the page. This will cause page faults when Q tries to access the same page, thus preventing access or modification to the page. When page fault occurs as Q tries to access the page, the page should be loaded to physical memory again before Q can access the page again. Therefore, Q cannot access or modify the page during the eviction process.
-
-Faulting the page back in can only be done after the frame is fully evicted, as loading needs to acquire frame_lock, which is held by P until the eviction is finished. Also, while Q’s page is being faulted in, allow_swap for the page should be set to false, thus P can only evict the page after faulting in finishes. This should avoid any race condition between eviction and loading of the same page.
-
-
->> B7: Suppose a page fault in process P causes a page to be read from
->> the file system or swap.  How do you ensure that a second process Q
->> cannot interfere by e.g. attempting to evict the frame while it is
->> still being read in?
-
-Whenever a page is loaded from the file system or swap, allow_swap in page’s supplemental page entry is set to false. In evict_frame, the code checks at first whether the page’s allow_swap is set to true before trying to evict that page. If the page is still being loaded, allow_swap should be set to false, and that page should not be a candidate for eviction.
-
-Once the page finishes being read in, allow_swap is set to true, allowing the page to be evicted again.
-
-
->> B8: Explain how you handle access to paged-out pages that occur
->> during system calls.  Do you use page faults to bring in pages (as
->> in user programs), or do you have a mechanism for "locking" frames
->> into physical memory, or do you use some other design?  How do you
->> gracefully handle attempted accesses to invalid virtual addresses?
-
-When access to paged-out page occurs during system calls, page fault should occur and the paged-out page is loaded back to memory.
-
-If an invalid virtual address is given, the page fault handler will not be able to find any supplemental page entry corresponding to the faulting address, and will kill the process with exit status of -1.
-
+No. Our implementation disallows removing of an open directory or a directory that is being used by a process. We made use of the inode’s open_cnt to check if any process is using the directory. If the directory’s inode’s open_cnt is greater than 1, it is not allowed to be removed. If open_cnt is greater than 1, it means that the directory is being used by some other process than the removing process. The directory’s inode will always be opened by once during the removal process, thus the limit is set to 1. 	
 
 ---- RATIONALE ----
 
->> B9: A single lock for the whole VM system would make
->> synchronization easy, but limit parallelism.  On the other hand,
->> using many locks complicates synchronization and raises the
->> possibility for deadlock but allows for high parallelism.  Explain
->> where your design falls along this continuum and why you chose to
->> design it this way.
+>> B6: Explain why you chose to represent the current directory of a
+>> process the way you did.
 
-We used a two locks to control accesses to the frame table and swap table. This will allow some kind of parallelism to the VM system, there is a lock each to control access to each system-wide shared data structures, so they will not affect each other’s performance. Also, by keeping the number of locks small, it is easier to keep track of locking to avoid any deadlocks. Using small number of locks also makes the code easier to understand, without the trouble of making sense of highly interleaved locking structure.
+We placed struct dir * in struct thread. It was the most natural choice of representing the current directory, as current directory is specific within a single process. Also, using struct dir allowed us to perform all of the manipulations on the current directory of the process very easily using the functions implemented in filesys/directory.c.
 
-			 MEMORY MAPPED FILES
-			 ===================
+			     BUFFER CACHE
+			     ============
 
 ---- DATA STRUCTURES ----
 
@@ -332,74 +260,74 @@ We used a two locks to control accesses to the frame table and swap table. This 
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-From /threads/thread.h
+From filesys/cache.h
 
-struct thread
+struct list cache_list: a list of cache blocks, representing the whole cache.
+struct lock cache_lock: a lock that controls access to the cache.
+
+enum access_mode
 {
-  ...
-  /* Supplemental Page Table */
-  struct hash s_page_table;
-  void *esp;
-
-  struct list mmap_list;
-  int next_mapid;
+	FILE_READ,
+	FILE_WRITE
 };
 
-struct list mmap_list;
-: a list of struct mmap_page to keep track of mmap pages in a process.
+The enum access_mode specifies the type of cache access, whether it is read or write.
 
-int next_mapid;
-: the next mapid to use upon calling mmap
-
-struct mmap_page
+struct cache_block
 {
-  int mapid;
-  struct s_page_entry *p_entry;
-  struct list_elem elem;
+	uint8_t block[DISK_SECTOR_SIZE];	
+	disk_sector_t disk_sector;			
+	bool accessed;							
+bool dirty;							
+	unsigned num_access;				
+	struct list_elem elem;
 };
 
-int mapid;
-: the mapid allocated to the file corresponding to the mmap page.
-
-struct s_page_entry *p_entry;
-: the s_page_entry of the mmap page.
-
-struct list_elem elem;
-: list_elem for insertion into mmap_list in thread.h.
-
+Uint8_t block[]: contains the data within the disk block.
+disk_sector_t disk_sector: the disk sector number that the cache is loaded from.
+bool accessed: indicates whether the cache block was accessed since it was loaded.
+bool dirty: indicates whether the contents in the cache have been modified.
+unsigned num_access: contains the number of processes accessing the cache. To be considered for eviction.
+Struct list_elem elem: used to insert the cache in the cache_list.
 
 ---- ALGORITHMS ----
 
->> C2: Describe how memory mapped files integrate into your virtual
->> memory subsystem.  Explain how the page fault and eviction
->> processes differ between swap pages and other pages.
+>> C2: Describe how your cache replacement algorithm chooses a cache
+>> block to evict.
 
-Memory mapped files are kept in each thread’s mmap_list, similar to how each thread keeps track of its open files. When mmap system call occurs, mmap file is processed and its pages are added to the supplemental page table, and it is given a mapid. The mmap pages are kept separately for easy access when munmap is called, and fast access to only the mmap pages are required.
+We used second chance algorithm. First, if the cache is being accessed by any process, it is not considered a candidate for eviction. Then, among the cache blocks that are not being accessed, check if it has been accessed before. If it was accessed before, the accessed variable is set to false. If it was not accessed before, we select that block to evict. If it has been modified before, then the contents are written to the disk before the cache is evicted. Finally, the new block is read from the disk to the cache.
 
-mmap files are mostly similar to executable files, in that they are read from file upon loading into physical memory. The differences during page fault and eviction is that for swap pages, when a page fault occurs, the contents are read from the swap disk into the physical memory. However, memory mapped pages are always read from the file. For eviction, dirty executable pages and swap pages are written to swap disk, while dirty mmap pages are written directly to the original file. On calling munmap or process exit, all dirty mmap pages are written to the mmap file as well.
+>> C3: Describe your implementation of write-behind.
 
->> C3: Explain how you determine whether a new file mapping overlaps
->> any existing segment.
+When the cache is initialized, a write-back thread is created. The function of the thread is to go through the cache list and check if each cache block is dirty. If it is dirty, then the contents of the cache block is written to the disk location specified by cache block’s disk_sector. After it is written, the dirty bit is set to false. After going through the whole list, the thread sleeps for WRITE_BACK_PERIOD, which is set to 3 seconds in our implementation. Thus, the write-back process is repeated every 3 seconds. 
 
-When mmap is called, the file is added page by page into the supplemental page table. Before adding to the supplemental page table, page_lookup() is called on the address that the page should be stored. If it returns non-null value, that means that there is already a page present in that address and all mmap pages added previously are unmapped and mmap fails by returning -1.
+>> C4: Describe your implementation of read-ahead.
 
+Since read-ahead needs to be asynchronous, we created a thread to read the next sector of the disk. The thread will be created every time an access to disk occurs, fetching the next disk sector into the cache if it is not already in the cache.
+
+---- SYNCHRONIZATION ----
+
+>> C5: When one process is actively reading or writing data in a
+>> buffer cache block, how are other processes prevented from evicting
+>> that block?
+
+Similarly to our implementation of pages and swap slots, which did not allow eviction of a page being accessed using a boolean allow_swap, the buffer cache blocks have a variable num_access that is incremented every time a process reads or writes to the buffer. It is initialized to zero, and as processes access the block, it increases to a non-zero value. num_access is decremented when the read or write finishes. This way, num_access will be greater than 1 if there is a process accessing it. By skipping block with num_access > 0, we will not evict a block being used.
+
+>> C6: During the eviction of a block from the cache, how are other
+>> processes prevented from attempting to access the block?
+
+During eviction, the process acquires cache_lock. Also, for every access to the cache, process needs to acquire the cache_lock. If a process is evicting the cache block, it must have acquired the cache_lock. No other process can access the cache since the lock is being held by another process. Lock is only released when eviction is complete, and if other processes want to get the block again, they need to bring it into the cache from the disk. 
 
 ---- RATIONALE ----
 
->> C4: Mappings created with "mmap" have similar semantics to those of
->> data demand-paged from executables, except that "mmap" mappings are
->> written back to their original files, not to swap.  This implies
->> that much of their implementation can be shared.  Explain why your
->> implementation either does or does not share much of the code for
->> the two situations.
+>> C7: Describe a file workload likely to benefit from buffer caching,
+>> and workloads likely to benefit from read-ahead and write-behind.
 
-A lot of the implementation is shared between executable pages and mmap pages. 
+A file workload that benefits from buffer caching is one that repeatedly accesses a few number of blocks. Since buffer caching brings those blocks into memory, access time will reduce greatly when compared to accessing the blocks from the disk itself.
 
-mmap files are loaded just like the executable files as they both create pages by reading from a file. Thus in add_page(), the part where we create the s_page_entry is exactly the same except for the page type. Also, upon page fault, demand-paging from executables and mmap files share exactly the same code, load_file(). This is because demand-paging for the two pages both require reading from the file.
+Workload that benefits from read-ahead is a sequential read, such as watching video file. The system will asynchronously bring in subsequent blocks when a single block is read, and the process does not have to wait for the fetching of data from the disk, since the next block is already loaded in the cache.
 
-When the contents in the page are written back upon eviction, most of the implementation is shared too. When the evicted page is not dirty, there is no need to write the contents to the swap disk/original file. Therefore, the frame is freed and no changes to the s_page_entry is made. When the page is demanded again, the contents will be read from the files.
-
-Since mmap and executable pages are very similar in nature, we decided to use the same implementation for both cases whenever possible, saving coding time and making it easier to understand.
+A workload that benefits from write-behind is one that keeps writing to a small number of blocks. The writes will be done in memory, not directly to the disks, and thus saves a lot of time that would have been used to access the disks. With write-behind, those writes can be done to the memory, and written to disk only once in a while, potentially saving a lot of time.
 
 			   SURVEY QUESTIONS
 			   ================
@@ -421,7 +349,10 @@ the quarter.
 >> find any of our guidance to be misleading?
 
 >> Do you have any suggestions for the TAs to more effectively assist
->> students, either for future quarters or the remaining projects?
+>> students in future quarters?
 
 >> Any other comments?
+
+
+
 
